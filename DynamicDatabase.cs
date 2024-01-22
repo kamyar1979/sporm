@@ -1,4 +1,6 @@
 ﻿
+using Inflector;
+
 namespace Sporm
 {
     using System;
@@ -12,14 +14,14 @@ namespace Sporm
     /// </summary>
     public class DynamicDatabase : DynamicObject
     {
-        private readonly DbProviderFactory _factory = null!;
+        private readonly DbProviderFactory _factory;
         private readonly DbConnection _connection = null!;
         private DbDataReader _reader = null!;
         
         public DynamicDatabase(DatabaseProvider provider)
         {
-            var factory = DbProviderFactories.GetFactory(provider.ProviderName);
-            if (factory.CreateConnection() is not { } connection) return;
+            _factory = DbProviderFactories.GetFactory(provider.ProviderName);
+            if (_factory.CreateConnection() is not { } connection) return;
             _connection = connection;
             _connection.ConnectionString = provider.ConnectionString;
         }
@@ -40,9 +42,9 @@ namespace Sporm
             var returnAsResult = methodName.EndsWith('_');
             if (methodName.EndsWith('_'))
             {
-                methodName = methodName.Substring(0, methodName.Length - 1);
+                methodName = methodName[..^1];
             }
-
+            
             if(_factory.CreateCommand() is not {}  command) return false;
             command.Connection = _connection;
             command.CommandType = CommandType.StoredProcedure;
@@ -57,7 +59,7 @@ namespace Sporm
 
                 for (i = 0; i < binder.CallInfo.ArgumentCount; i++)
                 {
-                    command.Parameters[i + 1].Value = args![i];
+                    command.Parameters[i].Value = args![i];
                 }
             }
             else
@@ -125,46 +127,44 @@ namespace Sporm
                     {
                         using (this._reader = command.ExecuteReader())
                         {
-                            if (_reader.Read())
+                            if (!_reader.Read()) return true;
+                            var fields = new string[_reader.FieldCount];
+                            for (i = 0; i < _reader.FieldCount; i++)
                             {
-                                string[] fields = new string[_reader.FieldCount];
-                                for (i = 0; i < _reader.FieldCount; i++)
+                                fields[i] = _reader.GetName(i);
+                            }
+
+                            if (returnType == typeof(object))
+                            {
+                                var builder = new DynamicTypeBuilder("anonymous_" + _reader.GetHashCode());
+                                foreach (var name in fields)
                                 {
-                                    fields[i] = _reader.GetName(i);
+                                    builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
                                 }
 
-                                if (returnType == typeof(object))
+                                var type = builder.CreateType();
+                                var instance = Activator.CreateInstance(type);
+                                foreach (var name in fields)
                                 {
-                                    var builder = new DynamicTypeBuilder("anonymous_" + _reader.GetHashCode());
-                                    foreach (var name in fields)
-                                    {
-                                        builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
-                                    }
-
-                                    var type = builder.CreateType();
-                                    var instance = Activator.CreateInstance(type);
-                                    foreach (var name in fields)
-                                    {
-                                        type.GetProperty(name)?.SetValue(instance,
-                                            _reader[name] is DBNull ? null : _reader[name], null);
-                                    }
-
-                                    result = instance;
+                                    type.GetProperty(name)?.SetValue(instance,
+                                        _reader[name] is DBNull ? null : _reader[name], null);
                                 }
-                                else
+
+                                result = instance;
+                            }
+                            else
+                            {
+                                var instance = Activator.CreateInstance(returnType);
+                                foreach (var prop in returnType.GetProperties())
                                 {
-                                    var instance = Activator.CreateInstance(returnType);
-                                    foreach (var prop in returnType.GetProperties())
+                                    if (Array.IndexOf(fields, prop.Name) != -1)
                                     {
-                                        if (Array.IndexOf(fields, prop.Name) != -1)
-                                        {
-                                            prop.SetValue(instance,
-                                                _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
-                                        }
+                                        prop.SetValue(instance,
+                                            _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
                                     }
-
-                                    result = instance;
                                 }
+
+                                result = instance;
                             }
                         }
                     }

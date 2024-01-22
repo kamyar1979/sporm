@@ -42,7 +42,9 @@ namespace Sporm
 				
 				command.Connection = _connection;
 				command.CommandType = CommandType.StoredProcedure;
-				command.CommandText = invocation.Method.Name;
+				command.CommandText = Attribute.IsDefined(invocation.Method, typeof(DbNameAttribute)) ?
+					(Attribute.GetCustomAttribute(invocation.Method, typeof(DbNameAttribute)) as DbNameAttribute)?.Name
+					: invocation.Method.Name;
 				
 				var returnAsResult = Attribute.IsDefined(invocation.Method, typeof(ReturnValueAsResultAttribute));
 

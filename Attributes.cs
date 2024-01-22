@@ -33,13 +33,13 @@
 		/// <summary>
 		/// The parameter size in the database stored procedure syntax.
 		/// </summary>
-		public int Size { get; set; }
+		public int Size { get;}
     }
 	
 	/// <summary>
 	/// This attributes is used when you want to name the attribute something other than the database name.
 	/// </summary>
-	[AttributeUsage(AttributeTargets.Parameter)]
+	[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Method)]
 	public class DbNameAttribute : Attribute
 	{
 		/// <summary>
@@ -50,13 +50,13 @@
 		{
 			if (string.IsNullOrEmpty(name) || !Regex.IsMatch(name, @"^\w*$"))
 				throw new ArgumentException("The name must be an valid alphanumeric variable name.");
-			this.Name = name;
+			Name = name;
 		}
 
 		/// <summary>
 		/// The parameter name in the database stored procedure syntax.
 		/// </summary>
-		public string Name { get; set; }
+		public string Name { get;}
 	}
 
 }
