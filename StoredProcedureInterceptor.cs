@@ -1,4 +1,5 @@
-﻿using Castle.Core.Interceptor;
+﻿
+using Castle.DynamicProxy;
 
 namespace Sporm
 {
@@ -14,7 +15,7 @@ namespace Sporm
 	public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvider> providers) : IInterceptor
 	{
 		private DbConnection _connection = null!;
-		private readonly DbProviderFactory _factory = null!;
+		private DbProviderFactory _factory = null!;
 		private DbDataReader _reader = null!;
 
 		/// <summary>
@@ -31,8 +32,8 @@ namespace Sporm
 					return;
 				}
 				if(!providers.TryGetValue(invocation.Method.DeclaringType!, out var provider)) return;
-				var factory = DbProviderFactories.GetFactory(provider.ProviderName);
-				if (factory.CreateConnection() is not { } connection) return;
+				_factory = DbProviderFactories.GetFactory(provider.ProviderName);
+				if (_factory.CreateConnection() is not { } connection) return;
 				_connection = connection;
 				_connection.ConnectionString = provider.ConnectionString;
 				
