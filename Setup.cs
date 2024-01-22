@@ -22,9 +22,12 @@ namespace Sporm
         /// Registers an interface type and binds it to a connection string name in teh configuration file.
         /// </summary>
         /// <typeparam name="T">Interface type</typeparam>
-        public static void Register<T>(DatabaseProvider provider) where T : class
+        public static void Register<T>(
+            string connectionString, 
+            string providerName, 
+            Func<string, string>? inflector = null) where T : class
         {
-            DatabaseProviders[typeof(T)] = provider;
+            DatabaseProviders[typeof(T)] = new DatabaseProvider(connectionString, providerName, inflector);
         }
 
         /// <summary>

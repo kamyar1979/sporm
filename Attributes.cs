@@ -1,4 +1,6 @@
-﻿namespace Sporm
+﻿using System.Reflection;
+
+namespace Sporm
 {
 	using System;
 	using System.Text.RegularExpressions;
@@ -19,21 +21,13 @@
     /// says that this method parameter should be considered as target stored procedure 'Size' parameter.
     /// </summary>
     [AttributeUsage(AttributeTargets.Parameter)]
-    public class SizeAttribute : Attribute
-    { 
-        /// <summary>
-		/// Initializes a new instance of the attribute.
-		/// </summary>
-		/// <param name="size">Size of the string</param>
-        public SizeAttribute(int size)
-		{
-			this.Size = size;
-		}
+    public class SizeAttribute(int size) : Attribute
+    {
+	    public int Size { get;} = size;
 
-		/// <summary>
-		/// The parameter size in the database stored procedure syntax.
-		/// </summary>
-		public int Size { get;}
+	    public static int GetSizeOrDefault(ParameterInfo param) =>
+		    (GetCustomAttribute(param, typeof(SizeAttribute)) as SizeAttribute)!.Size;
+	    
     }
 	
 	/// <summary>
@@ -53,10 +47,21 @@
 			Name = name;
 		}
 
+		public static string GetNameOrDefault(MemberInfo member) =>
+			IsDefined(member, typeof(DbNameAttribute))
+				? (GetCustomAttribute(member, typeof(DbNameAttribute)) as DbNameAttribute)?.Name ?? member.Name
+				: member.Name;
+
+		
+		public static string? GetNameOrDefault(ParameterInfo param) =>
+			IsDefined(param, typeof(DbNameAttribute))
+				? (GetCustomAttribute(param, typeof(DbNameAttribute)) as DbNameAttribute)?.Name ?? param.Name
+				: param.Name;
+
 		/// <summary>
 		/// The parameter name in the database stored procedure syntax.
 		/// </summary>
-		public string Name { get;}
+		private string Name { get;}
 	}
 
 }

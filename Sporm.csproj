@@ -8,8 +8,6 @@
 
     <ItemGroup>
       <PackageReference Include="Castle.Core" Version="5.1.1" />
-      <PackageReference Include="Inflector.NetCore" Version="1.2.3" />
-      <PackageReference Include="Npgsql" Version="8.0.1" />
     </ItemGroup>
 
 </Project>

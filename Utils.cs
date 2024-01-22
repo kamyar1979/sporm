@@ -5,7 +5,10 @@
 	using System.Data;
 	using System.Data.Common;
 
-	public record struct DatabaseProvider(string ConnectionString, string ProviderName);
+	public record struct DatabaseProvider(
+		string ConnectionString,
+		string ProviderName,
+		Func<string, string>? inflector);
 	internal static class Utils
 	{
 		internal static IEnumerable<Dictionary<string, object?>> GetIteratorDictionary(DbDataReader reader)

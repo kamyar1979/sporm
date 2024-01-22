@@ -1,6 +1,4 @@
 ﻿
-using Inflector;
-
 namespace Sporm
 {
     using System;
@@ -17,6 +15,7 @@ namespace Sporm
         private readonly DbProviderFactory _factory;
         private readonly DbConnection _connection = null!;
         private DbDataReader _reader = null!;
+        private readonly DatabaseProvider _provider;
         
         public DynamicDatabase(DatabaseProvider provider)
         {
@@ -24,6 +23,7 @@ namespace Sporm
             if (_factory.CreateConnection() is not { } connection) return;
             _connection = connection;
             _connection.ConnectionString = provider.ConnectionString;
+            _provider = provider;
         }
         /// <summary>
         /// This is Microsoft standard way for capturing any method call in a dynamic object.
@@ -49,6 +49,9 @@ namespace Sporm
             command.Connection = _connection;
             command.CommandType = CommandType.StoredProcedure;
             command.CommandText = methodName;
+            if (_provider.inflector != null)
+                command.CommandText = _provider.inflector(command.CommandText);
+
 
             var i = 0;
 
@@ -68,6 +71,8 @@ namespace Sporm
                 {
                     if(_factory.CreateParameter() is not {} param) continue;
                     param.ParameterName = item;
+                    if (_provider.inflector != null)
+                        param.ParameterName = _provider.inflector(param.ParameterName);
                     param.Direction = ParameterDirection.Input;
                     param.DbType = (DbType)Enum.Parse(typeof(DbType), args![i]!.GetType().Name);
                     param.Value = args[i];
