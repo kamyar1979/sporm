@@ -42,9 +42,13 @@ namespace Sporm
 
                 command.Connection = _connection;
                 command.CommandType = CommandType.StoredProcedure;
-                command.CommandText = DbNameAttribute.GetNameOrDefault(invocation.Method);
-                if (provider.inflector != null)
-                    command.CommandText = provider.inflector(command.CommandText);
+                if (!DbNameAttribute.TryGetName(invocation.Method, out var dbName))
+                {
+                    if (provider.inflector != null)
+                        dbName = provider.inflector(dbName);
+                }
+                
+                command.CommandText = dbName;
 
                 var returnAsResult = Attribute.IsDefined(invocation.Method, typeof(ReturnValueAsResultAttribute));
 
@@ -66,9 +70,13 @@ namespace Sporm
                     else
                     {
                         if (_factory.CreateParameter() is not { } param) return;
-                        param.ParameterName = DbNameAttribute.GetNameOrDefault(item);
-                        if (provider.inflector != null)
-                            param.ParameterName = provider.inflector(param.ParameterName);
+                        if (!DbNameAttribute.TryGetName(item, out var dbParamName))
+                        {
+                            if (provider.inflector != null && dbParamName != null)
+                                dbParamName = provider.inflector(dbParamName);
+                        }
+                        
+                        param.ParameterName = dbParamName;
 
                         if (Attribute.IsDefined(item, typeof(ReturnValueAttribute)))
                         {

@@ -47,16 +47,29 @@ namespace Sporm
 			Name = name;
 		}
 
-		public static string GetNameOrDefault(MemberInfo member) =>
-			IsDefined(member, typeof(DbNameAttribute))
-				? (GetCustomAttribute(member, typeof(DbNameAttribute)) as DbNameAttribute)?.Name ?? member.Name
-				: member.Name;
+		public static bool TryGetName(MemberInfo member, out string name)
+		{
+			if ((GetCustomAttribute(member, typeof(DbNameAttribute)) as DbNameAttribute)?.Name is { } dbName)
+			{
+				name = dbName;
+				return true;
+			}
 
-		
-		public static string? GetNameOrDefault(ParameterInfo param) =>
-			IsDefined(param, typeof(DbNameAttribute))
-				? (GetCustomAttribute(param, typeof(DbNameAttribute)) as DbNameAttribute)?.Name ?? param.Name
-				: param.Name;
+			name = member.Name;
+			return false;
+		}
+
+		public static bool TryGetName(ParameterInfo param, out string? name)
+		{
+			if ((GetCustomAttribute(param, typeof(DbNameAttribute)) as DbNameAttribute)?.Name is { } dbName)
+			{
+				name = dbName;
+				return true;
+			}
+
+			name = param.Name;
+			return false;
+		}
 
 		/// <summary>
 		/// The parameter name in the database stored procedure syntax.
