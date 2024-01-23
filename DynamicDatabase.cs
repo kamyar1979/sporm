@@ -1,203 +1,203 @@
-﻿namespace Sporm
+﻿namespace Sporm;
+
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
+using System.Dynamic;
+
+/// <summary>
+/// This is a dynamic class representing a pseud database which its stored procedures is callable via method names.
+/// </summary>
+public class DynamicDatabase : DynamicObject
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Data;
-    using System.Data.Common;
-    using System.Dynamic;
+    private readonly DbProviderFactory _factory;
+    private readonly DbConnection _connection = null!;
+    private DbDataReader _reader = null!;
+    private readonly DatabaseProvider _provider;
+
+    public DynamicDatabase(DatabaseProvider provider)
+    {
+        _factory = DbProviderFactories.GetFactory(provider.ProviderName);
+        if (_factory.CreateConnection() is not { } connection) return;
+        _connection = connection;
+        _connection.ConnectionString = provider.ConnectionString;
+        _provider = provider;
+    }
 
     /// <summary>
-    /// This is a dynamic class representing a pseud database which its stored procedures is callable via method names.
+    /// This is Microsoft standard way for capturing any method call in a dynamic object.
     /// </summary>
-    public class DynamicDatabase : DynamicObject
+    /// <param name="binder"></param>
+    /// <param name="args"></param>
+    /// <param name="result"></param>
+    /// <returns></returns>
+    public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
     {
-        private readonly DbProviderFactory _factory;
-        private readonly DbConnection _connection = null!;
-        private DbDataReader _reader = null!;
-        private readonly DatabaseProvider _provider;
+        result = null;
 
-        public DynamicDatabase(DatabaseProvider provider)
+        _connection.Open();
+
+        var methodName = binder.Name;
+        var returnAsResult = methodName.EndsWith('_');
+        if (methodName.EndsWith('_'))
         {
-            _factory = DbProviderFactories.GetFactory(provider.ProviderName);
-            if (_factory.CreateConnection() is not { } connection) return;
-            _connection = connection;
-            _connection.ConnectionString = provider.ConnectionString;
-            _provider = provider;
+            methodName = methodName[..^1];
         }
 
-        /// <summary>
-        /// This is Microsoft standard way for capturing any method call in a dynamic object.
-        /// </summary>
-        /// <param name="binder"></param>
-        /// <param name="args"></param>
-        /// <param name="result"></param>
-        /// <returns></returns>
-        public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
+        if (_factory.CreateCommand() is not { } command) return false;
+        command.Connection = _connection;
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandText = methodName;
+        if (_provider.Inflector != null)
+            command.CommandText = _provider.Inflector(command.CommandText);
+
+
+        var i = 0;
+
+        if (binder.CallInfo.ArgumentNames.Count == 0)
         {
-            result = null;
+            var builder = _factory.CreateCommandBuilder();
+            builder?.GetType().GetMethod("DeriveParameters")?.Invoke(null, [command]);
 
-            _connection.Open();
-
-            var methodName = binder.Name;
-            var returnAsResult = methodName.EndsWith('_');
-            if (methodName.EndsWith('_'))
+            var j = 0;
+            for (i = 0; i < binder.CallInfo.ArgumentCount; i++)
             {
-                methodName = methodName[..^1];
+                while (command.Parameters[i + j].Direction != ParameterDirection.Input
+                       || command.Parameters.Count == i + j) j++;
+                command.Parameters[i + j].Value = args![i];
             }
-
-            if (_factory.CreateCommand() is not { } command) return false;
-            command.Connection = _connection;
-            command.CommandType = CommandType.StoredProcedure;
-            command.CommandText = methodName;
-            if (_provider.inflector != null)
-                command.CommandText = _provider.inflector(command.CommandText);
-
-
-            var i = 0;
-
-            if (binder.CallInfo.ArgumentNames.Count == 0)
+        }
+        else
+        {
+            foreach (var item in binder.CallInfo.ArgumentNames)
             {
-                var builder = _factory.CreateCommandBuilder();
-                builder?.GetType().GetMethod("DeriveParameters")?.Invoke(null, [command]);
-
-                var j = 0;
-                for (i = 0; i < binder.CallInfo.ArgumentCount; i++)
-                {
-                    while (command.Parameters[i + j].Direction != ParameterDirection.Input) j++;
-                    command.Parameters[i + j].Value = args![i];
-                }
+                if (_factory.CreateParameter() is not { } param) continue;
+                param.ParameterName = item;
+                if (_provider.Inflector != null)
+                    param.ParameterName = _provider.Inflector(param.ParameterName);
+                param.Direction = ParameterDirection.Input;
+                param.DbType = (DbType)Enum.Parse(typeof(DbType), args![i]!.GetType().Name);
+                param.Value = args[i];
+                command.Parameters.Add(param);
+                i++;
             }
-            else
-            {
-                foreach (var item in binder.CallInfo.ArgumentNames)
-                {
-                    if (_factory.CreateParameter() is not { } param) continue;
-                    param.ParameterName = item;
-                    if (_provider.inflector != null)
-                        param.ParameterName = _provider.inflector(param.ParameterName);
-                    param.Direction = ParameterDirection.Input;
-                    param.DbType = (DbType)Enum.Parse(typeof(DbType), args![i]!.GetType().Name);
-                    param.Value = args[i];
-                    command.Parameters.Add(param);
-                    i++;
-                }
-            }
+        }
 
-            var returnType = binder.GetGenericTypeArguments()?.Count > 0
-                ? binder.GetGenericTypeArguments()?[0]
-                : typeof(object);
+        var returnType = binder.GetGenericTypeArguments()?.Count > 0
+            ? binder.GetGenericTypeArguments()?[0]
+            : typeof(object);
 
-            if (returnType != null && returnType != typeof(void))
+        if (returnType != null && returnType != typeof(void))
+        {
+            if (!returnAsResult)
             {
-                if (!returnAsResult)
+                if (returnType == typeof(Dictionary<string, object>))
                 {
-                    if (returnType == typeof(Dictionary<string, object>))
+                    var reader = command.ExecuteReader();
+                    if (!reader.Read()) return true;
+                    var fields = new string[reader.FieldCount];
+                    for (i = 0; i < reader.FieldCount; i++)
                     {
-                        var reader = command.ExecuteReader();
-                        if (!reader.Read()) return true;
-                        var fields = new string[reader.FieldCount];
-                        for (i = 0; i < reader.FieldCount; i++)
-                        {
-                            fields[i] = reader.GetName(i);
-                        }
-
-                        if (returnType != typeof(object)) return true;
-                        var instance = fields.ToDictionary(name => name,
-                            name => reader[name] is DBNull ? null : reader[name]);
-
-                        result = instance;
+                        fields[i] = reader.GetName(i);
                     }
-                    else if (returnType is { IsPrimitive: true } || 
-                             Nullable.GetUnderlyingType(returnType) is {IsPrimitive: true} || 
-                             returnType == typeof(string))
+
+                    if (returnType != typeof(object)) return true;
+                    var instance = fields.ToDictionary(name => name,
+                        name => reader[name] is DBNull ? null : reader[name]);
+
+                    result = instance;
+                }
+                else if (returnType is { IsPrimitive: true } || 
+                         Nullable.GetUnderlyingType(returnType) is {IsPrimitive: true} || 
+                         returnType == typeof(string))
+                {
+                    result = command.ExecuteScalar();
+                }
+                else if (returnType.GetInterface(nameof(IEnumerable<object>)) != null)
+                {
+                    _reader = command.ExecuteReader();
+                    if (returnType.IsGenericType && returnType.GetGenericArguments()[0] != typeof(object))
                     {
-                        result = command.ExecuteScalar();
-                    }
-                    else if (returnType.GetInterface(nameof(IEnumerable<object>)) != null)
-                    {
-                        _reader = command.ExecuteReader();
-                        if (returnType.IsGenericType && returnType.GetGenericArguments()[0] != typeof(object))
+                        if (returnType.GetGenericArguments()[0] == typeof(Dictionary<string, object>))
                         {
-                            if (returnType.GetGenericArguments()[0] == typeof(Dictionary<string, object>))
-                            {
-                                result = Utils.GetIteratorDictionary(_reader);
-                            }
-                            else
-                            {
-                                var type = returnType.GetGenericArguments()[0];
-                                result = GetType().GetMethod("GetIterator")?.MakeGenericMethod(type)
-                                    .Invoke(this, new object[] { _reader });
-                            }
+                            result = Utils.GetIteratorDictionary(_reader);
                         }
                         else
                         {
-                            result = Utils.GetIteratorDynamic(_reader);
+                            var type = returnType.GetGenericArguments()[0];
+                            result = GetType().GetMethod(nameof(Utils.GetIterator))?.MakeGenericMethod(type)
+                                .Invoke(this, [_reader]);
                         }
                     }
-                    else if (returnType == typeof(object))
+                    else
                     {
-                        using (_reader = command.ExecuteReader())
-                        {
-                            if (!_reader.Read()) return true;
-                            var fields = new string[_reader.FieldCount];
-                            for (i = 0; i < _reader.FieldCount; i++)
-                            {
-                                fields[i] = _reader.GetName(i) is { Length: > 0 } name ? name : "retVal";
-                            }
-
-                            if (returnType == typeof(object))
-                            {
-                                var builder = new DynamicTypeBuilder("anonymous_" + _reader.GetHashCode());
-                                foreach (var name in fields)
-                                {
-                                    builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
-                                }
-
-                                var type = builder.CreateType();
-                                var instance = Activator.CreateInstance(type);
-                                foreach (var name in fields)
-                                {
-                                    type.GetProperty(name)?.SetValue(instance,
-                                        _reader[name] is DBNull ? null : _reader[name], null);
-                                }
-
-                                result = instance;
-                            }
-                            else
-                            {
-                                var instance = Activator.CreateInstance(returnType);
-                                foreach (var prop in returnType.GetProperties())
-                                {
-                                    if (Array.IndexOf(fields, prop.Name) != -1)
-                                    {
-                                        prop.SetValue(instance,
-                                            _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
-                                    }
-                                }
-
-                                result = instance;
-                            }
-                        }
+                        result = Utils.GetIteratorDynamic(_reader);
                     }
                 }
-                else
+                else if (returnType == typeof(object))
                 {
-                    if (_factory.CreateParameter() is not { } returnValue) return false;
-                    returnValue.Direction = ParameterDirection.ReturnValue;
-                    returnValue.ParameterName = "RetVal";
-                    returnValue.DbType = (DbType)Enum.Parse(typeof(DbType), returnType.Name);
-                    command.Parameters.Add(returnValue);
-                    command.ExecuteNonQuery();
+                    using (_reader = command.ExecuteReader())
+                    {
+                        if (!_reader.Read()) return true;
+                        var fields = new string[_reader.FieldCount];
+                        for (i = 0; i < _reader.FieldCount; i++)
+                        {
+                            fields[i] = _reader.GetName(i) is { Length: > 0 } name ? name : Utils.ReturnValue;
+                        }
 
-                    result = returnValue.Value;
+                        if (returnType == typeof(object))
+                        {
+                            var builder = new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
+                            foreach (var name in fields)
+                            {
+                                builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
+                            }
+
+                            var type = builder.CreateType();
+                            var instance = Activator.CreateInstance(type);
+                            foreach (var name in fields)
+                            {
+                                type.GetProperty(name)?.SetValue(instance,
+                                    _reader[name] is DBNull ? null : _reader[name], null);
+                            }
+
+                            result = instance;
+                        }
+                        else
+                        {
+                            var instance = Activator.CreateInstance(returnType);
+                            foreach (var prop in returnType.GetProperties())
+                            {
+                                if (Array.IndexOf(fields, prop.Name) != -1)
+                                {
+                                    prop.SetValue(instance,
+                                        _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
+                                }
+                            }
+
+                            result = instance;
+                        }
+                    }
                 }
             }
             else
             {
+                if (_factory.CreateParameter() is not { } returnValue) return false;
+                returnValue.Direction = ParameterDirection.ReturnValue;
+                returnValue.ParameterName = Utils.ReturnValue;
+                returnValue.DbType = (DbType)Enum.Parse(typeof(DbType), returnType.Name);
+                command.Parameters.Add(returnValue);
                 command.ExecuteNonQuery();
-            }
 
-            return true;
+                result = returnValue.Value;
+            }
         }
+        else
+        {
+            command.ExecuteNonQuery();
+        }
+
+        return true;
     }
 }

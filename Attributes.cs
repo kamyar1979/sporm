@@ -23,7 +23,7 @@ namespace Sporm
     [AttributeUsage(AttributeTargets.Parameter)]
     public class SizeAttribute(int size) : Attribute
     {
-	    public int Size { get;} = size;
+	    private int Size { get;} = size;
 
 	    public static int GetSizeOrDefault(ParameterInfo param) =>
 		    (GetCustomAttribute(param, typeof(SizeAttribute)) as SizeAttribute)!.Size;
@@ -42,7 +42,7 @@ namespace Sporm
 		/// <param name="name"></param>
 		public DbNameAttribute(string name)
 		{
-			if (string.IsNullOrEmpty(name) || !Regex.IsMatch(name, @"^\w*$"))
+			if (string.IsNullOrEmpty(name) || !Regex.IsMatch(name, Utils.ValidNamePattern))
 				throw new ArgumentException("The name must be an valid alphanumeric variable name.");
 			Name = name;
 		}
