@@ -44,7 +44,7 @@ namespace Sporm
         /// <returns>An instance of this class.</returns>
         public static DynamicTypeBuilder FromDictionary(IDictionary<string, object> dict)
         {
-            string name = "anonym_" + dict.GetHashCode().ToString();
+            var name = "anonym_" + dict.GetHashCode().ToString();
             var result = new DynamicTypeBuilder(name);
             foreach (var item in dict)
             {
@@ -81,7 +81,7 @@ namespace Sporm
                 Type.EmptyTypes);
             var methodSetBuilder = _typeBuilder.DefineMethod("set_" + name,
                 MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig, null,
-                new Type[] { type });
+                [type]);
 
             var getIl = methodGetBuilder.GetILGenerator();
 
