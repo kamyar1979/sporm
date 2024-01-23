@@ -1,5 +1,4 @@
-﻿
-namespace Sporm
+﻿namespace Sporm
 {
     using System;
     using System.Collections.Generic;
@@ -16,7 +15,7 @@ namespace Sporm
         private readonly DbConnection _connection = null!;
         private DbDataReader _reader = null!;
         private readonly DatabaseProvider _provider;
-        
+
         public DynamicDatabase(DatabaseProvider provider)
         {
             _factory = DbProviderFactories.GetFactory(provider.ProviderName);
@@ -25,6 +24,7 @@ namespace Sporm
             _connection.ConnectionString = provider.ConnectionString;
             _provider = provider;
         }
+
         /// <summary>
         /// This is Microsoft standard way for capturing any method call in a dynamic object.
         /// </summary>
@@ -44,8 +44,8 @@ namespace Sporm
             {
                 methodName = methodName[..^1];
             }
-            
-            if(_factory.CreateCommand() is not {}  command) return false;
+
+            if (_factory.CreateCommand() is not { } command) return false;
             command.Connection = _connection;
             command.CommandType = CommandType.StoredProcedure;
             command.CommandText = methodName;
@@ -60,16 +60,18 @@ namespace Sporm
                 var builder = _factory.CreateCommandBuilder();
                 builder?.GetType().GetMethod("DeriveParameters")?.Invoke(null, [command]);
 
+                var j = 0;
                 for (i = 0; i < binder.CallInfo.ArgumentCount; i++)
                 {
-                    command.Parameters[i].Value = args![i];
+                    while (command.Parameters[i + j].Direction != ParameterDirection.Input) j++;
+                    command.Parameters[i + j].Value = args![i];
                 }
             }
             else
             {
                 foreach (var item in binder.CallInfo.ArgumentNames)
                 {
-                    if(_factory.CreateParameter() is not {} param) continue;
+                    if (_factory.CreateParameter() is not { } param) continue;
                     param.ParameterName = item;
                     if (_provider.inflector != null)
                         param.ParameterName = _provider.inflector(param.ParameterName);
@@ -81,10 +83,11 @@ namespace Sporm
                 }
             }
 
-            var returnType = binder.GetGenericTypeArguments()?.Count > 0 ? binder.GetGenericTypeArguments()?[0]
+            var returnType = binder.GetGenericTypeArguments()?.Count > 0
+                ? binder.GetGenericTypeArguments()?[0]
                 : typeof(object);
 
-            if (returnType != typeof(void))
+            if (returnType != null && returnType != typeof(void))
             {
                 if (!returnAsResult)
                 {
@@ -99,15 +102,18 @@ namespace Sporm
                         }
 
                         if (returnType != typeof(object)) return true;
-                        var instance = fields.ToDictionary(name => name, name => reader[name] is DBNull ? null : reader[name]);
+                        var instance = fields.ToDictionary(name => name,
+                            name => reader[name] is DBNull ? null : reader[name]);
 
                         result = instance;
                     }
-                    else if (returnType is { IsPrimitive: true } || returnType == typeof(string))
+                    else if (returnType is { IsPrimitive: true } || 
+                             Nullable.GetUnderlyingType(returnType) is {IsPrimitive: true} || 
+                             returnType == typeof(string))
                     {
                         result = command.ExecuteScalar();
                     }
-                    else if (returnType?.GetInterface("IEnumerable") != null)
+                    else if (returnType.GetInterface(nameof(IEnumerable<object>)) != null)
                     {
                         _reader = command.ExecuteReader();
                         if (returnType.IsGenericType && returnType.GetGenericArguments()[0] != typeof(object))
@@ -130,13 +136,13 @@ namespace Sporm
                     }
                     else if (returnType == typeof(object))
                     {
-                        using (this._reader = command.ExecuteReader())
+                        using (_reader = command.ExecuteReader())
                         {
                             if (!_reader.Read()) return true;
                             var fields = new string[_reader.FieldCount];
                             for (i = 0; i < _reader.FieldCount; i++)
                             {
-                                fields[i] = _reader.GetName(i);
+                                fields[i] = _reader.GetName(i) is { Length: > 0 } name ? name : "retVal";
                             }
 
                             if (returnType == typeof(object))
@@ -176,11 +182,10 @@ namespace Sporm
                 }
                 else
                 {
-                    if(_factory.CreateParameter() is not {} returnValue) return false;
+                    if (_factory.CreateParameter() is not { } returnValue) return false;
                     returnValue.Direction = ParameterDirection.ReturnValue;
                     returnValue.ParameterName = "RetVal";
-                    if(returnType != null)
-                        returnValue.DbType = (DbType)Enum.Parse(typeof(DbType), returnType.Name);
+                    returnValue.DbType = (DbType)Enum.Parse(typeof(DbType), returnType.Name);
                     command.Parameters.Add(returnValue);
                     command.ExecuteNonQuery();
 

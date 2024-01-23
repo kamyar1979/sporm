@@ -44,11 +44,15 @@ namespace Sporm
         /// <summary>
         /// Creates a dynamic instance of the DB provider to use the stored procedures.
         /// </summary>
-        /// <param name="provider"></param>
+        /// <param name="connectionString"></param>
+        /// <param name="providerName"></param>
+        /// <param name="inflector"></param>
         /// <returns></returns>
-        public static object GetInstance(DatabaseProvider provider)
+        public static object GetInstance(string connectionString,
+            string providerName, 
+            Func<string,string>? inflector=null)
         {
-            return new DynamicDatabase(provider);
+            return new DynamicDatabase(new DatabaseProvider(connectionString, providerName, inflector));
         }
     }
 }
