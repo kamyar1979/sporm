@@ -4,11 +4,25 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <Version>1.0.1</Version>
+        <Version>1.0.2</Version>
+        <Title>Stored Procedure ORM</Title>
+        <Description>Call Sored Proecedure like .NET methods!</Description>
+        <PackageProjectUrl>https://github.com/kamyar1979/sporm</PackageProjectUrl>
+        <PackageIcon>1998680.png</PackageIcon>
+        <RepositoryUrl>https://github.com/kamyar1979/sporm</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageTags>ORM StoredProcedure DynamicProxy</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>
       <PackageReference Include="Castle.Core" Version="5.1.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="1998680.png">
+        <Pack>True</Pack>
+        <PackagePath></PackagePath>
+      </None>
     </ItemGroup>
 
 </Project>
