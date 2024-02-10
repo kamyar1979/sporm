@@ -33,7 +33,7 @@ namespace Sporm
 	/// <summary>
 	/// This attributes is used when you want to name the attribute something other than the database name.
 	/// </summary>
-	[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Method)]
+	[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Method | AttributeTargets.Property)]
 	public class DbNameAttribute : Attribute
 	{
 		/// <summary>
@@ -68,6 +68,18 @@ namespace Sporm
 			}
 
 			name = param.Name;
+			return false;
+		}
+		
+		public static bool TryGetName(PropertyInfo propertyInfo, out string? name)
+		{
+			if ((GetCustomAttribute(propertyInfo, typeof(DbNameAttribute)) as DbNameAttribute)?.Name is { } dbName)
+			{
+				name = dbName;
+				return true;
+			}
+
+			name = propertyInfo.Name;
 			return false;
 		}
 

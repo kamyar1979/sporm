@@ -151,7 +151,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
                                 invocation.ReturnValue =
                                     typeof(Utils).GetMethod(nameof(Utils.GetIterator),
                                             BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
-                                        .Invoke(null, [_reader]);
+                                        .Invoke(null, [_reader, provider.Inflector]);
                             }
                         }
                         else
