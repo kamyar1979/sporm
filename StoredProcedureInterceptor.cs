@@ -16,6 +16,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
     private DbConnection _connection = null!;
     private DbProviderFactory _factory = null!;
     private DbDataReader _reader = null!;
+    
 
     /// <summary>
     /// Main Interceptor method.
@@ -91,7 +92,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
                     var type = item.ParameterType;
                     var underlyingType = Nullable.GetUnderlyingType(type);
                     var returnType = underlyingType ?? type;
-                    param.DbType = (DbType)Enum.Parse(typeof(DbType), returnType.Name.Replace("&", ""));
+                    param.DbType = returnType.ToClrType();
 
                     if (Attribute.IsDefined(item, typeof(SizeAttribute)))
                     {
@@ -212,8 +213,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
                     if (_factory.CreateParameter() is not { } returnValue) return;
                     returnValue.Direction = ParameterDirection.ReturnValue;
                     returnValue.ParameterName = Utils.ReturnValue;
-                    returnValue.DbType = (DbType)Enum.Parse(typeof(DbType),
-                        invocation.Method.ReturnType.Name.Replace("&", ""));
+                    returnValue.DbType = invocation.Method.ReturnType.ToClrType();
                     command.Parameters.Add(returnValue);
 
                     command.ExecuteNonQuery();

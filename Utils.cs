@@ -1,4 +1,6 @@
-﻿namespace Sporm;
+﻿using System.Reflection;
+
+namespace Sporm;
 
 using System;
 using System.Collections.Generic;
@@ -8,7 +10,8 @@ using System.Data.Common;
 public record struct DatabaseProvider(
     string ConnectionString,
     string ProviderName,
-    Func<string, string>? Inflector);
+    Func<string, string>? Inflector,
+    Func<MemberInfo, DbType>? TypeResolver);
 
 internal static class Utils
 {
@@ -95,5 +98,15 @@ internal static class Utils
         }
 
         reader.Close();
+    }
+    
+    internal static DbType ToClrType(this MemberInfo type)
+    {
+        if(Enum.TryParse<DbType>(type.Name.Replace("&", ""), out var dbType))
+        {
+            return dbType;
+        }
+
+        return type == typeof(TimeOnly) ? DbType.Time : DbType.String;
     }
 }

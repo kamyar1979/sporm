@@ -24,7 +24,7 @@ public class DynamicDatabase : DynamicObject
         _connection.ConnectionString = provider.ConnectionString;
         _provider = provider;
     }
-
+    
     /// <summary>
     /// This is Microsoft standard way for capturing any method call in a dynamic object.
     /// </summary>
@@ -77,7 +77,7 @@ public class DynamicDatabase : DynamicObject
                 if (_provider.Inflector != null)
                     param.ParameterName = _provider.Inflector(param.ParameterName);
                 param.Direction = ParameterDirection.Input;
-                param.DbType = (DbType)Enum.Parse(typeof(DbType), args![i]!.GetType().Name);
+                param.DbType = args![i]!.GetType().ToClrType();
                 param.Value = args[i];
                 command.Parameters.Add(param);
                 i++;
@@ -186,7 +186,7 @@ public class DynamicDatabase : DynamicObject
                 if (_factory.CreateParameter() is not { } returnValue) return false;
                 returnValue.Direction = ParameterDirection.ReturnValue;
                 returnValue.ParameterName = Utils.ReturnValue;
-                returnValue.DbType = (DbType)Enum.Parse(typeof(DbType), returnType.Name);
+                returnValue.DbType = returnType.ToClrType();
                 command.Parameters.Add(returnValue);
                 command.ExecuteNonQuery();
 
