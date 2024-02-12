@@ -10,8 +10,7 @@ using System.Data.Common;
 public record struct DatabaseProvider(
     string ConnectionString,
     string ProviderName,
-    Func<string, string>? Inflector,
-    Func<MemberInfo, DbType>? TypeResolver);
+    Func<string, string>? Inflector);
 
 internal static class Utils
 {
