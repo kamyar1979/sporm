@@ -166,7 +166,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
                         {
                             if (_reader.Read())
                             {
-                                string[] fields = new string[_reader.FieldCount];
+                                var fields = new string[_reader.FieldCount];
                                 for (i = 0; i < _reader.FieldCount; i++)
                                 {
                                     fields[i] = _reader.GetName(i);
@@ -174,7 +174,8 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
 
                                 if (invocation.Method.ReturnType == typeof(object))
                                 {
-                                    var builder = new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
+                                    var builder = 
+                                        new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
                                     foreach (var name in fields)
                                     {
                                         builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
@@ -233,7 +234,6 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, DatabaseProvid
                 {
                     invocation.Arguments[i] = command.Parameters[i].Value;
                 }
-
                 i++;
             }
         }
