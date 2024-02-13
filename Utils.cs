@@ -35,7 +35,7 @@ internal static class Utils
     }
 
     internal static IEnumerable<T> GetIterator<T>(IDataReader reader,
-        Func<string, string>? fieldInflector) where T : new()
+        Configuration configuration) where T : new()
     {
         var fields = new string[reader.FieldCount];
         for (var i = 0; i < reader.FieldCount; i++)
@@ -50,8 +50,8 @@ internal static class Utils
             {
                 if (!DbNameAttribute.TryGetName(prop, out var dbFieldName))
                 {
-                    if (fieldInflector != null && dbFieldName != null)
-                        dbFieldName = fieldInflector(dbFieldName);
+                    if (configuration.Inflector != null && dbFieldName != null)
+                        dbFieldName = configuration.Inflector(dbFieldName);
                 }
 
                 if (dbFieldName != null && Array.IndexOf(fields, dbFieldName) != -1)

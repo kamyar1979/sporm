@@ -1,4 +1,6 @@
-﻿namespace Sporm;
+﻿using System.Reflection;
+
+namespace Sporm;
 
 using System;
 using System.Collections.Generic;
@@ -13,14 +15,14 @@ public class DynamicDatabase : DynamicObject
 {
     private readonly DbConnection _connection = null!;
     private DbDataReader _reader = null!;
-    private readonly Configuration _provider;
+    private readonly Configuration _configuration;
 
-    public DynamicDatabase(Configuration provider)
+    public DynamicDatabase(Configuration configuration)
     {
-        if (provider.ProviderFactory.CreateConnection() is not { } connection) return;
+        if (configuration.ProviderFactory.CreateConnection() is not { } connection) return;
         _connection = connection;
-        _connection.ConnectionString = provider.ConnectionString;
-        _provider = provider;
+        _connection.ConnectionString = configuration.ConnectionString;
+        _configuration = configuration;
     }
     
     /// <summary>
@@ -43,19 +45,19 @@ public class DynamicDatabase : DynamicObject
             methodName = methodName[..^1];
         }
 
-        if (_provider.ProviderFactory.CreateCommand() is not { } command) return false;
+        if (_configuration.ProviderFactory.CreateCommand() is not { } command) return false;
         command.Connection = _connection;
         command.CommandType = CommandType.StoredProcedure;
         command.CommandText = methodName;
-        if (_provider.Inflector != null)
-            command.CommandText = _provider.Inflector(command.CommandText);
+        if (_configuration.Inflector != null)
+            command.CommandText = _configuration.Inflector(command.CommandText);
 
 
         var i = 0;
 
         if (binder.CallInfo.ArgumentNames.Count == 0)
         {
-            var builder = _provider.ProviderFactory.CreateCommandBuilder();
+            var builder = _configuration.ProviderFactory.CreateCommandBuilder();
             builder?.GetType().GetMethod("DeriveParameters")?.Invoke(null, [command]);
 
             var j = 0;
@@ -70,12 +72,12 @@ public class DynamicDatabase : DynamicObject
         {
             foreach (var item in binder.CallInfo.ArgumentNames)
             {
-                if (_provider.ProviderFactory.CreateParameter() is not { } param) continue;
+                if (_configuration.ProviderFactory.CreateParameter() is not { } param) continue;
                 param.ParameterName = item;
-                if (_provider.Inflector != null)
-                    param.ParameterName = _provider.Inflector(param.ParameterName);
+                if (_configuration.Inflector != null)
+                    param.ParameterName = _configuration.Inflector(param.ParameterName);
                 param.Direction = ParameterDirection.Input;
-                param.DbType = args![i]!.GetType().ToClrType(_provider);
+                param.DbType = args![i]!.GetType().ToClrType(_configuration);
                 param.Value = args[i];
                 command.Parameters.Add(param);
                 i++;
@@ -124,8 +126,9 @@ public class DynamicDatabase : DynamicObject
                         else
                         {
                             var type = returnType.GetGenericArguments()[0];
-                            result = GetType().GetMethod(nameof(Utils.GetIterator))?.MakeGenericMethod(type)
-                                .Invoke(this, [_reader]);
+                            result = typeof(Utils).GetMethod(nameof(Utils.GetIterator),
+                                    BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
+                                .Invoke(null, [_reader, _configuration]);
                         }
                     }
                     else
@@ -181,10 +184,10 @@ public class DynamicDatabase : DynamicObject
             }
             else
             {
-                if (_provider.ProviderFactory.CreateParameter() is not { } returnValue) return false;
+                if (_configuration.ProviderFactory.CreateParameter() is not { } returnValue) return false;
                 returnValue.Direction = ParameterDirection.ReturnValue;
                 returnValue.ParameterName = Utils.ReturnValue;
-                returnValue.DbType = returnType.ToClrType(_provider);
+                returnValue.DbType = returnType.ToClrType(_configuration);
                 command.Parameters.Add(returnValue);
                 command.ExecuteNonQuery();
 

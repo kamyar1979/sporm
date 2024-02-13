@@ -10,11 +10,11 @@ using Castle.DynamicProxy;
 public static class Setup
 {
     private static readonly StoredProcedureInterceptor? Interceptor;
-    private static readonly Dictionary<Type, Configuration> DatabaseProviders = new();
+    private static readonly Dictionary<Type, Configuration> DatabaseConfigurations = new();
 
     static Setup()
     {
-        Interceptor = new StoredProcedureInterceptor(DatabaseProviders);
+        Interceptor = new StoredProcedureInterceptor(DatabaseConfigurations);
     }
 
     /// <summary>
@@ -24,7 +24,7 @@ public static class Setup
     public static void Register<T>(
         Configuration configuration) where T : class
     {
-        DatabaseProviders[typeof(T)] = configuration;
+        DatabaseConfigurations[typeof(T)] = configuration;
     }
 
     /// <summary>

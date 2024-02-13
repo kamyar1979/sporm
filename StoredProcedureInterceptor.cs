@@ -11,7 +11,7 @@ using System.Reflection;
 /// <summary>
 /// The brain of the project: Windsor IoC Interceptor.
 /// </summary>
-public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration> providers) : IInterceptor
+public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration> configuration) : IInterceptor
 {
     private DbConnection _connection = null!;
     private DbDataReader _reader = null!;
@@ -31,25 +31,25 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 return;
             }
 
-            if (!providers.TryGetValue(invocation.Method.DeclaringType!, out var provider)) return;
-            if (provider.ProviderFactory.CreateConnection() is not { } connection) return;
+            if (!configuration.TryGetValue(invocation.Method.DeclaringType!, out var config)) return;
+            if (config.ProviderFactory.CreateConnection() is not { } connection) return;
             _connection = connection;
-            _connection.ConnectionString = provider.ConnectionString;
+            _connection.ConnectionString = config.ConnectionString;
 
             _connection.Open();
-            if (provider.ProviderFactory.CreateCommand() is not { } command) return;
+            if (config.ProviderFactory.CreateCommand() is not { } command) return;
 
             command.Connection = _connection;
             command.CommandType = CommandType.StoredProcedure;
             if (!DbNameAttribute.TryGetName(invocation.Method, out var dbName))
             {
-                if (provider.Inflector != null)
-                    dbName = provider.Inflector(dbName);
+                if (config.Inflector != null)
+                    dbName = config.Inflector(dbName);
             }
                 
             command.CommandText = dbName;
 
-            var returnAsResult = provider.NoReturnValue != true && 
+            var returnAsResult = config.NoReturnValue != true && 
                                  Attribute.IsDefined(invocation.Method, typeof(ReturnValueAsResultAttribute));
 
             var i = 0;
@@ -69,11 +69,11 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 }
                 else
                 {
-                    if (provider.ProviderFactory.CreateParameter() is not { } param) return;
+                    if (config.ProviderFactory.CreateParameter() is not { } param) return;
                     if (!DbNameAttribute.TryGetName(item, out var dbParamName))
                     {
-                        if (provider.Inflector != null && dbParamName != null)
-                            dbParamName = provider.Inflector(dbParamName);
+                        if (config.Inflector != null && dbParamName != null)
+                            dbParamName = config.Inflector(dbParamName);
                     }
                         
                     param.ParameterName = dbParamName;
@@ -91,7 +91,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                     var type = item.ParameterType;
                     var underlyingType = Nullable.GetUnderlyingType(type);
                     var returnType = underlyingType ?? type;
-                    param.DbType = returnType.ToClrType(provider);
+                    param.DbType = returnType.ToClrType(config);
 
                     if (Attribute.IsDefined(item, typeof(SizeAttribute)))
                     {
@@ -151,7 +151,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                                 invocation.ReturnValue =
                                     typeof(Utils).GetMethod(nameof(Utils.GetIterator),
                                             BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
-                                        .Invoke(null, [_reader, provider.Inflector]);
+                                        .Invoke(null, [_reader, config]);
                             }
                         }
                         else
@@ -210,10 +210,10 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 }
                 else
                 {
-                    if (provider.ProviderFactory.CreateParameter() is not { } returnValue) return;
+                    if (config.ProviderFactory.CreateParameter() is not { } returnValue) return;
                     returnValue.Direction = ParameterDirection.ReturnValue;
                     returnValue.ParameterName = Utils.ReturnValue;
-                    returnValue.DbType = invocation.Method.ReturnType.ToClrType(provider);
+                    returnValue.DbType = invocation.Method.ReturnType.ToClrType(config);
                     command.Parameters.Add(returnValue);
 
                     command.ExecuteNonQuery();
