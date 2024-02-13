@@ -10,7 +10,7 @@ using Castle.DynamicProxy;
 public static class Setup
 {
     private static readonly StoredProcedureInterceptor? Interceptor;
-    private static readonly Dictionary<Type, DatabaseProvider> DatabaseProviders = new();
+    private static readonly Dictionary<Type, Configuration> DatabaseProviders = new();
 
     static Setup()
     {
@@ -22,11 +22,9 @@ public static class Setup
     /// </summary>
     /// <typeparam name="T">Interface type</typeparam>
     public static void Register<T>(
-        string connectionString,
-        string providerName,
-        Func<string, string>? inflector = null) where T : class
+        Configuration configuration) where T : class
     {
-        DatabaseProviders[typeof(T)] = new DatabaseProvider(connectionString, providerName, inflector);
+        DatabaseProviders[typeof(T)] = configuration;
     }
 
     /// <summary>
@@ -43,15 +41,9 @@ public static class Setup
     /// <summary>
     /// Creates a dynamic instance of the DB provider to use the stored procedures.
     /// </summary>
-    /// <param name="connectionString"></param>
-    /// <param name="providerName"></param>
-    /// <param name="inflector"></param>
-    /// <param name="fieldInflector"></param>
     /// <returns></returns>
-    public static object GetInstance(string connectionString,
-        string providerName,
-        Func<string, string>? inflector = null)
+    public static object GetInstance(Configuration configuration)
     {
-        return new DynamicDatabase(new DatabaseProvider(connectionString, providerName, inflector));
+        return new DynamicDatabase(configuration);
     }
 }

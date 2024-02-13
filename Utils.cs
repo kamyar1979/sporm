@@ -7,10 +7,6 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
-public record struct DatabaseProvider(
-    string ConnectionString,
-    string ProviderName,
-    Func<string, string>? Inflector);
 
 internal static class Utils
 {
@@ -99,13 +95,15 @@ internal static class Utils
         reader.Close();
     }
     
-    internal static DbType ToClrType(this MemberInfo type)
+    internal static DbType ToClrType(this MemberInfo type, Configuration configuration)
     {
         if(Enum.TryParse<DbType>(type.Name.Replace("&", ""), out var dbType))
         {
             return dbType;
         }
 
-        return type == typeof(TimeOnly) ? DbType.Time : DbType.String;
+        if (type == typeof(TimeOnly)) return DbType.Time;
+        
+        return configuration.TypeResolver?.Invoke(type) ?? DbType.String;
     }
 }
