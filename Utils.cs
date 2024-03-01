@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
-
 internal static class Utils
 {
     internal const string ReturnValue = "RetVal";
@@ -45,7 +44,7 @@ internal static class Utils
 
         while (reader.Read())
         {
-            var instance = new T();
+            object instance = new T();
             foreach (var prop in typeof(T).GetProperties())
             {
                 if (!DbNameAttribute.TryGetName(prop, out var dbFieldName))
@@ -56,11 +55,11 @@ internal static class Utils
 
                 if (dbFieldName != null && Array.IndexOf(fields, dbFieldName) != -1)
                 {
-                    prop.SetValue(instance, reader[dbFieldName] is DBNull ? null : reader[dbFieldName], null);
+                    prop.SetValue(instance, reader[dbFieldName] is DBNull ? null : reader[dbFieldName]);
                 }
             }
 
-            yield return instance;
+            yield return (T)instance;
         }
 
         reader.Close();
@@ -94,16 +93,16 @@ internal static class Utils
 
         reader.Close();
     }
-    
+
     internal static DbType ToClrType(this MemberInfo type, Configuration configuration)
     {
-        if(Enum.TryParse<DbType>(type.Name.Replace("&", ""), out var dbType))
+        if (Enum.TryParse<DbType>(type.Name.Replace("&", ""), out var dbType))
         {
             return dbType;
         }
 
         if (type == typeof(TimeOnly)) return DbType.Time;
-        
+
         return configuration.TypeResolver?.Invoke(type) ?? DbType.String;
     }
 }
