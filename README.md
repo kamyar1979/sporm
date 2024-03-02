@@ -1,22 +1,22 @@
 # Stored Procedure ORM!
 
-I know Stored Procedures and Database Functions, in most cases are not good practice, except for Data Driven projects. But this project has started
-years ago for communication with an old MS-SQL Server database and that is why I have used the name 'Stored Procedure' instead
-of Database Function. But current version supports any database which has .NET driver.
+I know Stored Procedures and Database Functions, in most cases are not good practice, except for Data Driven projects. 
+But this project has started years ago for communication with an old MS-SQL Server database and that is why I have used
+the name 'Stored Procedure' instead of Database Function. But current version supports any database which has 
+.NET driver.
 
 ## The problem
-Many times, you want to call database functions/procedures from within an OOP project, and you have to write too much boiler plate
-code: You have to wrote code for adding parameters and values. If the functions returns a table structure, the ORM can not help you for impedance mismatch here!
-You have to manually convert between database result and your model objects. This library does the trick for you and
-tries to do all the things ORM does. You can call database functions as normal class methods and expect the result converted
-to .NET types, including your class types.
+Many times, you want to call database functions/procedures from within an OOP project, and you have to write too much 
+boiler plate code: You have to wrote code for adding parameters and values. If the functions returns a table structure, 
+the ORM can not help you for impedance mismatch here! You have to manually convert between database result and your 
+model objects. This library does the trick for you and tries to do all the things ORM does. You can call database 
+functions as normal class methods and expect the result converted to .NET types, including your class types.
 
 ## Getting started
 
 You can use this library in two ways: 
 
-1. Static Type
-2. Dynamic Type
+### 1. Static Typing
 
 For static typing, you must create an interface which includes your database functions signature.
 
@@ -37,6 +37,12 @@ public interface IMyDb : IDisposable
 
 #### Note that IDisposable is _required_ to make the library close connection after reading data.
 
+For PostgreSQL, we need to add the following line to force NpgSQL to behave functions as like stored procedures
+
+```csharp
+AppContext.SetSwitch("Npgsql.EnableStoredProcedureCompatMode", true);
+```
+
 Now, create configuration for your desired database, which includes functions:
 
 ```csharp
@@ -47,6 +53,7 @@ using Inflector;
 var conf = ConfigurationBuilder.ForDatabase("server=127.0.0.1;user id=kamyar;password=MySecretPassword;database=example",
     Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore()).Build();
 ```
+(We are using Inflector library https://www.nuget.org/packages/Inflector.NetCore)
 
 You can use any database factory you want instead of NpgsqlFactory! We are using PostGreSQL here. Then setup
 your database! And you can now use Sprom!
@@ -61,9 +68,9 @@ int result = db.Add(6, 7);
 
 // Result would be 13!
 ```
-Note using statement which makes the database connection closes after reading data. You must use it to avoid connection
+Note the _using_ statement which makes the database connection close after reading data. You must use it to avoid connection
 leaks in your project. You may note that we are using inflector, which means the naming convention of the database 
-differ from code naming conventions. That is, if we used 'Add' in the function definition within the database, 
+differs from code naming conventions. That is, if we used 'Add' in the function definition within the database, 
 we would omit inflector part of the configuration.
 
 Lets try a more complex example: The function returns a table.
@@ -120,6 +127,8 @@ Console.WriteLine(result[0].Name);
 The result is an array of User object containing the result set. The shining part of this code is DbName attribute: The
 inflector tries to find user_name in the result fields, but the name is username, so we explicitly inform the library to
 use the mentioned name for the result. This attribute is available also for input parameters and class/struct names.
+
+### 2. Dynamic Typing
 
 What if we do not have time for creating database interface? No Problem! you just loose IDE 
 auto-completion and some running speed (Due to DLR). In the following code we have not declared IMyDb interface,
