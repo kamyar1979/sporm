@@ -156,8 +156,18 @@ var array = result.ToArray();
 Console.WriteLine(array[0].name);
 ```
 
-Note that reverse inflection has not been supported yet. You must use the same property name as the function result.
+Note: If you want to use C# naming conventions and property names get pascal case, you must add _Deflector_:
 
+```csharp
+var conf = ConfigurationBuilder.ForDatabase("server=127.0.0.1;user id=kamyar;password=MySecretPassword;database=example",
+    Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore()).Deflector(s => s.Pascalize()).Build();
 
+```
+
+Then you can use 'Name' instead of 'name' for property:
+
+```csharp
+Console.WriteLine(array[0].Name);
+```
 
 

@@ -156,7 +156,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                         }
                         else
                         {
-                            invocation.ReturnValue = Utils.GetIteratorDynamic(_reader);
+                            invocation.ReturnValue = Utils.GetIteratorDynamic(_reader, config);
                         }
                     }
                     else if (invocation.Method.ReturnType == typeof(object))

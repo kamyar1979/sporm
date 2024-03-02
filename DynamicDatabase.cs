@@ -133,7 +133,7 @@ public class DynamicDatabase : DynamicObject
                     }
                     else
                     {
-                        result = Utils.GetIteratorDynamic(_reader);
+                        result = Utils.GetIteratorDynamic(_reader, _configuration);
                     }
                 }
                 else if (returnType == typeof(object))

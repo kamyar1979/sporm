@@ -65,7 +65,8 @@ internal static class Utils
         reader.Close();
     }
 
-    internal static IEnumerable<object?> GetIteratorDynamic(IDataReader reader)
+    internal static IEnumerable<object?> GetIteratorDynamic(IDataReader reader,
+        Configuration configuration)
     {
         var builder = new DynamicTypeBuilder(AnonymousTypePrefix + reader.GetHashCode());
         var fields = new string[reader.FieldCount];
@@ -73,10 +74,11 @@ internal static class Utils
         {
             fields[i] = reader.GetName(i);
         }
-
+        
         foreach (var name in fields)
         {
-            builder.AddProperty(name, reader.GetFieldType(reader.GetOrdinal(name)));
+            var propertyName = configuration.Deflector is { } deflector ? deflector(name) : name;
+            builder.AddProperty(propertyName, reader.GetFieldType(reader.GetOrdinal(name)));
         }
 
         var type = builder.CreateType();
@@ -85,7 +87,8 @@ internal static class Utils
             var instance = Activator.CreateInstance(type);
             foreach (var name in fields)
             {
-                type.GetProperty(name)?.SetValue(instance, reader[name] is DBNull ? null : reader[name], null);
+                var propertyName = configuration.Deflector is { } deflector ? deflector(name) : name;
+                type.GetProperty(propertyName)?.SetValue(instance, reader[name] is DBNull ? null : reader[name], null);
             }
 
             yield return instance;

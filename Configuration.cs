@@ -8,6 +8,7 @@ public record struct Configuration(
     string ConnectionString,
     DbProviderFactory ProviderFactory,
     Func<string, string>? Inflector,
+    Func<string, string>? Deflector,
     Func<MemberInfo, DbType>? TypeResolver,
     bool? NoReturnValue = false);
 
@@ -26,7 +27,7 @@ public class ConfigurationBuilder
             new Configuration(
                 connectionString,
                 factory,
-                null, null
+                null, null, null
             ));
     }
 
@@ -38,6 +39,12 @@ public class ConfigurationBuilder
     public ConfigurationBuilder Inflector(Func<string, string> inflector)
     {
         _configuration.Inflector = inflector;
+        return this;
+    }
+
+    public ConfigurationBuilder Deflector(Func<string, string> deflector)
+    {
+        _configuration.Deflector = deflector;
         return this;
     }
 
