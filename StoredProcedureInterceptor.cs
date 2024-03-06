@@ -114,11 +114,8 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                         _reader = command.ExecuteReader();
                         if (_reader.Read())
                         {
-                            var fields = new string[_reader.FieldCount];
-                            for (var i = 0; i < _reader.FieldCount; i++)
-                            {
-                                fields[i] = _reader.GetName(i);
-                            }
+                            var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
+                                .ToArray();
 
                             if (invocation.Method.ReturnType == typeof(object))
                             {
@@ -165,11 +162,8 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                         {
                             if (_reader.Read())
                             {
-                                var fields = new string[_reader.FieldCount];
-                                for (var i = 0; i < _reader.FieldCount; i++)
-                                {
-                                    fields[i] = _reader.GetName(i);
-                                }
+                                var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
+                                    .ToArray();
 
                                 if (invocation.Method.ReturnType == typeof(object))
                                 {
