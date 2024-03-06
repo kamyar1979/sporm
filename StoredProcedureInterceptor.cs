@@ -15,7 +15,58 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
 {
     private DbConnection _connection = null!;
     private DbDataReader _reader = null!;
-    
+
+
+    private IEnumerable<DbParameter> CreateParameters(Configuration config, IInvocation invocation)
+    {
+        foreach (var (item, index)in invocation.Method.GetParameters().Select((p, i) => (p,i)))
+        {
+            if (item.IsOptional && invocation.Arguments.Length < index + 1)
+            {
+                break;
+            }
+
+            //Check Nullable parameter. 
+            if (invocation.Arguments[index] == null &&
+                item.ParameterType.IsGenericType &&
+                item.ParameterType.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                continue;
+            }
+
+            if (config.ProviderFactory.CreateParameter() is not { } param) yield break;
+            if (!DbNameAttribute.TryGetName(item, out var dbParamName))
+            {
+                if (config.Inflector != null && dbParamName != null)
+                    dbParamName = config.Inflector(dbParamName);
+            }
+
+            param.ParameterName = dbParamName;
+
+            if (Attribute.IsDefined(item, typeof(ReturnValueAttribute)))
+            {
+                param.Direction = ParameterDirection.ReturnValue;
+            }
+            else
+            {
+                param.Direction = item.IsOut ? ParameterDirection.Output : ParameterDirection.Input;
+            }
+
+            //Check Nullable parameter && ParamValue != null
+            var type = item.ParameterType;
+            var underlyingType = Nullable.GetUnderlyingType(type);
+            var returnType = underlyingType ?? type;
+            param.DbType = returnType.ToClrType(config);
+
+            if (Attribute.IsDefined(item, typeof(SizeAttribute)))
+            {
+                param.Size = SizeAttribute.GetSizeOrDefault(item);
+            }
+
+            param.Value = invocation.Arguments[index];
+            yield return param;
+        }        
+    }
 
     /// <summary>
     /// Main Interceptor method.
@@ -46,65 +97,14 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 if (config.Inflector != null)
                     dbName = config.Inflector(dbName);
             }
-                
+
             command.CommandText = dbName;
 
-            var returnAsResult = config.NoReturnValue != true && 
+            var returnAsResult = config.NoReturnValue != true &&
                                  Attribute.IsDefined(invocation.Method, typeof(ReturnValueAsResultAttribute));
-
-            var i = 0;
-            foreach (var item in invocation.Method.GetParameters())
-            {
-                if (item.IsOptional && invocation.Arguments.Length < i + 1)
-                {
-                    break;
-                }
-
-                //Check Nullable parameter. 
-                if (invocation.Arguments[i] == null &&
-                    item.ParameterType.IsGenericType &&
-                    item.ParameterType.GetGenericTypeDefinition() == typeof(Nullable<>))
-                {
-                    //Jump if ParameterValue == null && ParameterType is Nullable  
-                }
-                else
-                {
-                    if (config.ProviderFactory.CreateParameter() is not { } param) return;
-                    if (!DbNameAttribute.TryGetName(item, out var dbParamName))
-                    {
-                        if (config.Inflector != null && dbParamName != null)
-                            dbParamName = config.Inflector(dbParamName);
-                    }
-                        
-                    param.ParameterName = dbParamName;
-
-                    if (Attribute.IsDefined(item, typeof(ReturnValueAttribute)))
-                    {
-                        param.Direction = ParameterDirection.ReturnValue;
-                    }
-                    else
-                    {
-                        param.Direction = item.IsOut ? ParameterDirection.Output : ParameterDirection.Input;
-                    }
-
-                    //Check Nullable parameter && ParamValue != null
-                    var type = item.ParameterType;
-                    var underlyingType = Nullable.GetUnderlyingType(type);
-                    var returnType = underlyingType ?? type;
-                    param.DbType = returnType.ToClrType(config);
-
-                    if (Attribute.IsDefined(item, typeof(SizeAttribute)))
-                    {
-                        param.Size = SizeAttribute.GetSizeOrDefault(item);
-                    }
-
-                    param.Value = invocation.Arguments[i];
-                    command.Parameters.Add(param);
-                }
-
-                i++;
-            }
-
+            
+            command.Parameters.AddRange(CreateParameters(config, invocation).ToArray());
+            
             if (invocation.Method.ReturnType != typeof(void))
             {
                 if (!returnAsResult)
@@ -115,7 +115,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                         if (_reader.Read())
                         {
                             var fields = new string[_reader.FieldCount];
-                            for (i = 0; i < _reader.FieldCount; i++)
+                            for (var i = 0; i < _reader.FieldCount; i++)
                             {
                                 fields[i] = _reader.GetName(i);
                             }
@@ -166,14 +166,14 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                             if (_reader.Read())
                             {
                                 var fields = new string[_reader.FieldCount];
-                                for (i = 0; i < _reader.FieldCount; i++)
+                                for (var i = 0; i < _reader.FieldCount; i++)
                                 {
                                     fields[i] = _reader.GetName(i);
                                 }
 
                                 if (invocation.Method.ReturnType == typeof(object))
                                 {
-                                    var builder = 
+                                    var builder =
                                         new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
                                     foreach (var name in fields)
                                     {
@@ -226,14 +226,12 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 command.ExecuteNonQuery();
             }
 
-            i = 0;
-            foreach (var item in invocation.Method.GetParameters())
+            foreach (var (item, index) in invocation.Method.GetParameters().Select((p, i) => (p,i)))
             {
                 if (item.IsOut)
                 {
-                    invocation.Arguments[i] = command.Parameters[i].Value;
+                    invocation.Arguments[index] = command.Parameters[index].Value;
                 }
-                i++;
             }
         }
         finally
