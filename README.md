@@ -111,7 +111,16 @@ public record struct User(
     [property: DbName("username")] string Username,
     string Name,
     string Email,
-    DateTime LastLogin);```
+    DateTime LastLogin);
+```
+
+```csharp 
+public interface IMyDb : IDisposable
+{
+    public int Add(int a, int b);
+    public IEnumerable<User> GetUsers();
+}
+
 ```
 
 ```csharp
