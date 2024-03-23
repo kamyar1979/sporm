@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Reflection;
+using Castle.DynamicProxy;
 
 namespace Sporm;
 
@@ -31,9 +32,15 @@ public class ConfigurationBuilder
             ));
     }
 
-    public Configuration Build()
+    public T CreateInstance<T>() where T : class
     {
-        return _configuration;
+        var proxyGen = new ProxyGenerator();
+        return proxyGen.CreateInterfaceProxyWithoutTarget<T>(new StoredProcedureInterceptor(_configuration));
+    }
+
+    public dynamic CreateInstance()
+    {
+        return new DynamicDatabase(_configuration);
     }
 
     public ConfigurationBuilder Inflector(Func<string, string> inflector)

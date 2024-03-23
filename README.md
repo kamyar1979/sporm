@@ -51,7 +51,7 @@ using Sporm;
 using Inflector;
 
 var conf = ConfigurationBuilder.ForDatabase("server=127.0.0.1;user id=kamyar;password=MySecretPassword;database=example",
-    Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore()).Build();
+    Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore());
 ```
 (We are using Inflector library https://www.nuget.org/packages/Inflector.NetCore)
 
@@ -60,9 +60,7 @@ your database! And you can now use Sprom!
 
 ```csharp
 
-Setup.Register<IMyDb>(conf);
-
-using var db = Setup.GetInstance<IMyDb>();
+using var db = conf.CreateInstance<IMyDb>();
 
 int result = db.Add(6, 7);
 
@@ -144,7 +142,7 @@ auto-completion and some running speed (Due to DLR). In the following code we ha
 instead we use dynamic keyword for database object;
 
 ```csharp
-dynamic db = Setup.GetInstance(conf);
+dynamic db = conf.CreateInstance();
 
 IEnumerable<User> result = db.GetUsers<IEnumerable<User>>();
 
@@ -156,7 +154,7 @@ Console.WriteLine(array[0].Name);
 What if we do not want to declare User class? It is possible too!
 
 ```csharp
-dynamic db = Setup.GetInstance(conf);
+dynamic db = conf.CreateInstance();
 
 IEnumerable<dynamic> result = db.GetUsers<IEnumerable<dynamic>>();
 

@@ -11,15 +11,15 @@ using System.Reflection;
 /// <summary>
 /// The brain of the project: Windsor IoC Interceptor.
 /// </summary>
-public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration> configuration) : IInterceptor
+public class StoredProcedureInterceptor(Configuration configuration) : IInterceptor
 {
     private DbConnection _connection = null!;
     private DbDataReader _reader = null!;
 
 
-    private IEnumerable<DbParameter> CreateParameters(Configuration config, IInvocation invocation)
+    private IEnumerable<DbParameter> CreateParameters(IInvocation invocation)
     {
-        foreach (var (item, index)in invocation.Method.GetParameters().Select((p, i) => (p,i)))
+        foreach (var (item, index)in invocation.Method.GetParameters().Select((p, i) => (p, i)))
         {
             if (item.IsOptional && invocation.Arguments.Length < index + 1)
             {
@@ -34,11 +34,11 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 continue;
             }
 
-            if (config.ProviderFactory.CreateParameter() is not { } param) yield break;
+            if (configuration.ProviderFactory.CreateParameter() is not { } param) yield break;
             if (!DbNameAttribute.TryGetName(item, out var dbParamName))
             {
-                if (config.Inflector != null && dbParamName != null)
-                    dbParamName = config.Inflector(dbParamName);
+                if (configuration.Inflector != null && dbParamName != null)
+                    dbParamName = configuration.Inflector(dbParamName);
             }
 
             param.ParameterName = dbParamName;
@@ -56,7 +56,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
             var type = item.ParameterType;
             var underlyingType = Nullable.GetUnderlyingType(type);
             var returnType = underlyingType ?? type;
-            param.DbType = returnType.ToClrType(config);
+            param.DbType = returnType.ToClrType(configuration);
 
             if (Attribute.IsDefined(item, typeof(SizeAttribute)))
             {
@@ -65,7 +65,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
 
             param.Value = invocation.Arguments[index];
             yield return param;
-        }        
+        }
     }
 
     /// <summary>
@@ -82,29 +82,28 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 return;
             }
 
-            if (!configuration.TryGetValue(invocation.Method.DeclaringType!, out var config)) return;
-            if (config.ProviderFactory.CreateConnection() is not { } connection) return;
+            if (configuration.ProviderFactory.CreateConnection() is not { } connection) return;
             _connection = connection;
-            _connection.ConnectionString = config.ConnectionString;
+            _connection.ConnectionString = configuration.ConnectionString;
 
             _connection.Open();
-            if (config.ProviderFactory.CreateCommand() is not { } command) return;
+            if (configuration.ProviderFactory.CreateCommand() is not { } command) return;
 
             command.Connection = _connection;
             command.CommandType = CommandType.StoredProcedure;
             if (!DbNameAttribute.TryGetName(invocation.Method, out var dbName))
             {
-                if (config.Inflector != null)
-                    dbName = config.Inflector(dbName);
+                if (configuration.Inflector != null)
+                    dbName = configuration.Inflector(dbName);
             }
 
             command.CommandText = dbName;
 
-            var returnAsResult = config.NoReturnValue != true &&
+            var returnAsResult = configuration.NoReturnValue != true &&
                                  Attribute.IsDefined(invocation.Method, typeof(ReturnValueAsResultAttribute));
-            
-            command.Parameters.AddRange(CreateParameters(config, invocation).ToArray());
-            
+
+            command.Parameters.AddRange(CreateParameters(invocation).ToArray());
+
             if (invocation.Method.ReturnType != typeof(void))
             {
                 if (!returnAsResult)
@@ -148,12 +147,12 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                                 invocation.ReturnValue =
                                     typeof(Utils).GetMethod(nameof(Utils.GetIterator),
                                             BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
-                                        .Invoke(null, [_reader, config]);
+                                        .Invoke(null, [_reader, configuration]);
                             }
                         }
                         else
                         {
-                            invocation.ReturnValue = Utils.GetIteratorDynamic(_reader, config);
+                            invocation.ReturnValue = Utils.GetIteratorDynamic(_reader, configuration);
                         }
                     }
                     else if (invocation.Method.ReturnType == typeof(object))
@@ -204,10 +203,10 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 }
                 else
                 {
-                    if (config.ProviderFactory.CreateParameter() is not { } returnValue) return;
+                    if (configuration.ProviderFactory.CreateParameter() is not { } returnValue) return;
                     returnValue.Direction = ParameterDirection.ReturnValue;
                     returnValue.ParameterName = Utils.ReturnValue;
-                    returnValue.DbType = invocation.Method.ReturnType.ToClrType(config);
+                    returnValue.DbType = invocation.Method.ReturnType.ToClrType(configuration);
                     command.Parameters.Add(returnValue);
 
                     command.ExecuteNonQuery();
@@ -220,7 +219,7 @@ public class StoredProcedureInterceptor(IReadOnlyDictionary<Type, Configuration>
                 command.ExecuteNonQuery();
             }
 
-            foreach (var (item, index) in invocation.Method.GetParameters().Select((p, i) => (p,i)))
+            foreach (var (item, index) in invocation.Method.GetParameters().Select((p, i) => (p, i)))
             {
                 if (item.IsOut)
                 {
