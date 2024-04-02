@@ -104,11 +104,29 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
 
             command.Parameters.AddRange(CreateParameters(invocation).ToArray());
 
-            if (invocation.Method.ReturnType != typeof(void))
+            Type returnType;
+            var isAsync = false;
+            
+            if (invocation.Method.ReturnType.IsGenericType && invocation.Method.ReturnType == typeof(Task<>))
+            {
+                returnType = invocation.Method.ReturnType.GetGenericArguments()[0];
+                isAsync = true;
+            }
+            else if (invocation.Method.ReturnType == typeof(Task))
+            {
+                returnType = typeof(void);
+                isAsync = true;
+            }
+            else
+            {
+                returnType = invocation.Method.ReturnType;
+            }
+
+            if (returnType != typeof(void))
             {
                 if (!returnAsResult)
                 {
-                    if (invocation.Method.ReturnType == typeof(Dictionary<string, object>))
+                    if (returnType == typeof(Dictionary<string, object>))
                     {
                         _reader = command.ExecuteReader();
                         if (_reader.Read())
@@ -116,7 +134,7 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                             var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
                                 .ToArray();
 
-                            if (invocation.Method.ReturnType == typeof(object))
+                            if (returnType == typeof(object))
                             {
                                 var instance = fields.ToDictionary(name => name,
                                     name => _reader[name] is DBNull ? null : _reader[name]);
@@ -124,26 +142,27 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                             }
                         }
                     }
-                    else if (invocation.Method.ReturnType.Namespace == nameof(System) &&
-                             invocation.Method.ReturnType != typeof(object))
+                    else if (returnType.Namespace == nameof(System) &&
+                             returnType != typeof(object))
                     {
-                        var result = command.ExecuteScalar();
-                        invocation.ReturnValue = result is DBNull ? null : command.ExecuteScalar();
+                        var result = isAsync ? command.ExecuteScalarAsync() : command.ExecuteScalar();
+                        if(!isAsync)
+                            invocation.ReturnValue = result is DBNull ? null : result;
                     }
-                    else if (invocation.Method.ReturnType.GetInterface(nameof(IEnumerable<object>)) != null)
+                    else if (returnType.GetInterface(nameof(IEnumerable<object>)) != null)
                     {
                         _reader = command.ExecuteReader();
-                        if (invocation.Method.ReturnType.IsGenericType &&
-                            invocation.Method.ReturnType.GetGenericArguments()[0] != typeof(object))
+                        if (returnType.IsGenericType &&
+                            returnType.GetGenericArguments()[0] != typeof(object))
                         {
-                            if (invocation.Method.ReturnType.GetGenericArguments()[0] ==
+                            if (returnType.GetGenericArguments()[0] ==
                                 typeof(Dictionary<string, object>))
                             {
                                 invocation.ReturnValue = Utils.GetIteratorDictionary(_reader);
                             }
                             else
                             {
-                                var type = invocation.Method.ReturnType.GetGenericArguments()[0];
+                                var type = returnType.GetGenericArguments()[0];
                                 invocation.ReturnValue =
                                     typeof(Utils).GetMethod(nameof(Utils.GetIterator),
                                             BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
@@ -155,7 +174,7 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                             invocation.ReturnValue = Utils.GetIteratorDynamic(_reader, configuration);
                         }
                     }
-                    else if (invocation.Method.ReturnType == typeof(object))
+                    else if (returnType == typeof(object))
                     {
                         using (_reader = command.ExecuteReader())
                         {
@@ -164,7 +183,7 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                                 var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
                                     .ToArray();
 
-                                if (invocation.Method.ReturnType == typeof(object))
+                                if (returnType == typeof(object))
                                 {
                                     var builder =
                                         new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
@@ -185,8 +204,8 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                                 }
                                 else
                                 {
-                                    var instance = Activator.CreateInstance(invocation.Method.ReturnType);
-                                    foreach (var prop in invocation.Method.ReturnType.GetProperties())
+                                    var instance = Activator.CreateInstance(returnType);
+                                    foreach (var prop in returnType.GetProperties())
                                     {
                                         if (Array.IndexOf(fields, prop.Name) != -1)
                                         {
@@ -206,12 +225,12 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                     if (configuration.ProviderFactory.CreateParameter() is not { } returnValue) return;
                     returnValue.Direction = ParameterDirection.ReturnValue;
                     returnValue.ParameterName = Utils.ReturnValue;
-                    returnValue.DbType = invocation.Method.ReturnType.ToClrType(configuration);
+                    returnValue.DbType = returnType.ToClrType(configuration);
                     command.Parameters.Add(returnValue);
 
                     command.ExecuteNonQuery();
 
-                    invocation.ReturnValue = Convert.ChangeType(returnValue.Value, invocation.Method.ReturnType);
+                    invocation.ReturnValue = Convert.ChangeType(returnValue.Value, returnType);
                 }
             }
             else
