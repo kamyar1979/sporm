@@ -16,7 +16,7 @@ public record struct Configuration(
 public class ConfigurationBuilder
 {
     private Configuration _configuration;
-
+    
     private ConfigurationBuilder(Configuration configuration)
     {
         _configuration = configuration;

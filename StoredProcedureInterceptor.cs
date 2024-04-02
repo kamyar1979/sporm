@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
-using System.Reflection;
 
 /// <summary>
 /// The brain of the project: Windsor IoC Interceptor.
@@ -14,7 +13,7 @@ using System.Reflection;
 public class StoredProcedureInterceptor(Configuration configuration) : IInterceptor
 {
     private DbConnection _connection = null!;
-    private DbDataReader _reader = null!;
+    private readonly ResultExtractor _extractor = new(configuration);
 
 
     private IEnumerable<DbParameter> CreateParameters(IInvocation invocation)
@@ -104,121 +103,13 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
 
             command.Parameters.AddRange(CreateParameters(invocation).ToArray());
 
-            Type returnType;
-            var isAsync = false;
-            
-            if (invocation.Method.ReturnType.IsGenericType && invocation.Method.ReturnType == typeof(Task<>))
-            {
-                returnType = invocation.Method.ReturnType.GetGenericArguments()[0];
-                isAsync = true;
-            }
-            else if (invocation.Method.ReturnType == typeof(Task))
-            {
-                returnType = typeof(void);
-                isAsync = true;
-            }
-            else
-            {
-                returnType = invocation.Method.ReturnType;
-            }
+            var returnType = invocation.Method.ReturnType;
 
             if (returnType != typeof(void))
             {
                 if (!returnAsResult)
                 {
-                    if (returnType == typeof(Dictionary<string, object>))
-                    {
-                        _reader = command.ExecuteReader();
-                        if (_reader.Read())
-                        {
-                            var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
-                                .ToArray();
-
-                            if (returnType == typeof(object))
-                            {
-                                var instance = fields.ToDictionary(name => name,
-                                    name => _reader[name] is DBNull ? null : _reader[name]);
-                                invocation.ReturnValue = instance;
-                            }
-                        }
-                    }
-                    else if (returnType.Namespace == nameof(System) &&
-                             returnType != typeof(object))
-                    {
-                        var result = isAsync ? command.ExecuteScalarAsync() : command.ExecuteScalar();
-                        if(!isAsync)
-                            invocation.ReturnValue = result is DBNull ? null : result;
-                    }
-                    else if (returnType.GetInterface(nameof(IEnumerable<object>)) != null)
-                    {
-                        _reader = command.ExecuteReader();
-                        if (returnType.IsGenericType &&
-                            returnType.GetGenericArguments()[0] != typeof(object))
-                        {
-                            if (returnType.GetGenericArguments()[0] ==
-                                typeof(Dictionary<string, object>))
-                            {
-                                invocation.ReturnValue = Utils.GetIteratorDictionary(_reader);
-                            }
-                            else
-                            {
-                                var type = returnType.GetGenericArguments()[0];
-                                invocation.ReturnValue =
-                                    typeof(Utils).GetMethod(nameof(Utils.GetIterator),
-                                            BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
-                                        .Invoke(null, [_reader, configuration]);
-                            }
-                        }
-                        else
-                        {
-                            invocation.ReturnValue = Utils.GetIteratorDynamic(_reader, configuration);
-                        }
-                    }
-                    else if (returnType == typeof(object))
-                    {
-                        using (_reader = command.ExecuteReader())
-                        {
-                            if (_reader.Read())
-                            {
-                                var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
-                                    .ToArray();
-
-                                if (returnType == typeof(object))
-                                {
-                                    var builder =
-                                        new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
-                                    foreach (var name in fields)
-                                    {
-                                        builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
-                                    }
-
-                                    var type = builder.CreateType();
-                                    var instance = Activator.CreateInstance(type);
-                                    foreach (var name in fields)
-                                    {
-                                        type.GetProperty(name)!.SetValue(instance,
-                                            _reader[name] is DBNull ? null : _reader[name], null);
-                                    }
-
-                                    invocation.ReturnValue = instance;
-                                }
-                                else
-                                {
-                                    var instance = Activator.CreateInstance(returnType);
-                                    foreach (var prop in returnType.GetProperties())
-                                    {
-                                        if (Array.IndexOf(fields, prop.Name) != -1)
-                                        {
-                                            prop.SetValue(instance,
-                                                _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
-                                        }
-                                    }
-
-                                    invocation.ReturnValue = instance;
-                                }
-                            }
-                        }
-                    }
+                    invocation.ReturnValue = _extractor.Extract(command, returnType);
                 }
                 else
                 {
