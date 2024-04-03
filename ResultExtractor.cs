@@ -15,13 +15,13 @@ public static class TypeChecker
     public static bool IsAsyncEnumerable(this Type t) => t.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>);
     public static Type GetInnerType(this Type t) => t.GetGenericArguments()[0];
 
-    public static bool IsPrimitiveTaskResult(this Type t) =>
+    public static bool IsSystemTaskResult(this Type t) =>
         t.GetInnerType() is { } taskResultType && taskResultType.IsSystem();
 
     public static bool IsUntypedDictionary(this Type t) => t == typeof(Dictionary<string, object?>);
 
     public static bool IsAsyncUntypedDictionary(this Type t) =>
-        t.GetInnerType() is { } taskResultType && taskResultType.IsUntypedDictionary();
+        t.IsTaskResult() && t.GetInnerType() is { } taskResultType && taskResultType.IsUntypedDictionary();
 
     public static bool IsDynamicObject(this Type t) => t == typeof(object);
 }
@@ -64,10 +64,10 @@ public class ResultExtractor
 
     public void RegisterExtractors()
     {
-        Register(TypeChecker.IsUntypedDictionary, ExtractDictionaryAsync);
-        Register(TypeChecker.IsAsyncUntypedDictionary, ExtractDictionary);
+        Register(TypeChecker.IsUntypedDictionary, ExtractDictionary);
+        Register(TypeChecker.IsAsyncUntypedDictionary, ExtractDictionaryAsync);
         Register(TypeChecker.IsSystem, InvokeGeneric(nameof(ExtractPrimitive)));
-        Register(TypeChecker.IsPrimitiveTaskResult, InvokeInnerGeneric(nameof(ExtractPrimitiveAsync)));
+        Register(TypeChecker.IsSystemTaskResult, InvokeInnerGeneric(nameof(ExtractPrimitiveAsync)));
         Register(TypeChecker.IsEnumerable, InvokeInnerGeneric(nameof(ExtractEnumerable)));
         Register(TypeChecker.IsAsyncEnumerable, InvokeInnerGeneric(nameof(ExtractAsyncEnumerable)));
         Register(TypeChecker.IsDynamicObject, ExtractDynamic);
@@ -112,8 +112,10 @@ public class ResultExtractor
     private IEnumerable<T>? ExtractEnumerable<T>(DbCommand command) where T: new()
     {
         _reader = command.ExecuteReader();
-        if (typeof(T).IsDynamicObject()) return (IEnumerable<T>?) Utils.GetIteratorDynamic(_reader, _configuration);
-        if (typeof(T).IsUntypedDictionary()) return (IEnumerable<T>?) Utils.GetIteratorDictionary(_reader);
+        if (typeof(T).IsDynamicObject()) 
+            return (IEnumerable<T>?) Utils.GetIteratorDynamic(_reader, _configuration);
+        if (typeof(T).IsUntypedDictionary()) 
+            return (IEnumerable<T>?) Utils.GetIteratorDictionary(_reader, _configuration);
         return (IEnumerable<T>?) typeof(Utils).GetMethod(nameof(Utils.GetIterator),
                 BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(typeof(T))
             .Invoke(null, [_reader, _configuration]);
@@ -122,8 +124,10 @@ public class ResultExtractor
     private IAsyncEnumerable<T>? ExtractAsyncEnumerable<T>(DbCommand command) where T: new()
     {
         _reader = command.ExecuteReader();
-        // if (typeof(T).IsDynamicObject()) return (IEnumerable<T>?) Utils.GetIteratorDynamic(_reader, _configuration);
-        // if (typeof(T).IsUntypedDictionary()) return (IEnumerable<T>?) Utils.GetIteratorDictionary(_reader);
+        if (typeof(T).IsDynamicObject()) 
+            return (IAsyncEnumerable<T>?) Utils.GetIteratorDynamicAsync(_reader, _configuration);
+        if (typeof(T).IsUntypedDictionary()) 
+            return (IAsyncEnumerable<T>?) Utils.GetIteratorDictionaryAsync(_reader, _configuration);
         return (IAsyncEnumerable<T>?) typeof(Utils).GetMethod(nameof(Utils.GetIteratorAsync),
                 BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(typeof(T))
             .Invoke(null, [_reader, _configuration]);

@@ -17,7 +17,8 @@ internal static class Utils
     internal const string SetPropertyPrefix = "set_";
     internal const string ValidNamePattern = @"^[^\d]\w*$";
 
-    internal static IEnumerable<Dictionary<string, object?>> GetIteratorDictionary(DbDataReader reader)
+    internal static IEnumerable<Dictionary<string, object?>> GetIteratorDictionary(DbDataReader reader, 
+        Configuration configuration)
     {
         var fields = new string[reader.FieldCount];
         for (var i = 0; i < reader.FieldCount; i++)
@@ -27,10 +28,29 @@ internal static class Utils
 
         while (reader.Read())
         {
-            yield return fields.ToDictionary(name => name, name => reader[name] is DBNull ? null : reader[name]);
+            yield return fields.ToDictionary(name => configuration.Deflector is {} deflector ? deflector(name) : name
+                , name => reader[name] is DBNull ? null : reader[name]);
         }
 
         reader.Close();
+    }
+
+    internal static async IAsyncEnumerable<Dictionary<string, object?>> GetIteratorDictionaryAsync(DbDataReader reader,
+        Configuration configuration)
+    {
+        var fields = new string[reader.FieldCount];
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            fields[i] = reader.GetName(i);
+        }
+
+        while (await reader.ReadAsync())
+        {
+            yield return fields.ToDictionary(name => configuration.Deflector is {} deflector ? deflector(name) : name,
+                name => reader[name] is DBNull ? null : reader[name]);
+        }
+
+        await reader.CloseAsync();
     }
 
     internal static IEnumerable<T> GetIterator<T>(DbDataReader reader,
@@ -127,6 +147,38 @@ internal static class Utils
         }
 
         reader.Close();
+    }
+
+    internal static async IAsyncEnumerable<object?> GetIteratorDynamicAsync(DbDataReader reader,
+        Configuration configuration)
+    {
+        var builder = new DynamicTypeBuilder(AnonymousTypePrefix + reader.GetHashCode());
+        var fields = new string[reader.FieldCount];
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            fields[i] = reader.GetName(i);
+        }
+        
+        foreach (var name in fields)
+        {
+            var propertyName = configuration.Deflector is { } deflector ? deflector(name) : name;
+            builder.AddProperty(propertyName, reader.GetFieldType(reader.GetOrdinal(name)));
+        }
+
+        var type = builder.CreateType();
+        while (await reader.ReadAsync())
+        {
+            var instance = Activator.CreateInstance(type);
+            foreach (var name in fields)
+            {
+                var propertyName = configuration.Deflector is { } deflector ? deflector(name) : name;
+                type.GetProperty(propertyName)?.SetValue(instance, reader[name] is DBNull ? null : reader[name], null);
+            }
+
+            yield return instance;
+        }
+
+        await reader.CloseAsync();
     }
 
     internal static DbType ToClrType(this MemberInfo type, Configuration configuration)

@@ -121,7 +121,7 @@ public class DynamicDatabase : DynamicObject
                     {
                         if (returnType.GetGenericArguments()[0] == typeof(Dictionary<string, object>))
                         {
-                            result = Utils.GetIteratorDictionary(_reader);
+                            result = Utils.GetIteratorDictionary(_reader, _configuration);
                         }
                         else
                         {
