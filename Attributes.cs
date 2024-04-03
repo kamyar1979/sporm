@@ -55,7 +55,6 @@ namespace Sporm
 				return true;
 			}
 			name = member is MethodInfo method && 
-				(method.ReturnType == typeof(Task) || method.ReturnType.BaseType == typeof(Task)) &&
 				method.Name.EndsWith("Async")
 				? method.Name[..^5]
 				: member.Name;

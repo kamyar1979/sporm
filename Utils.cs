@@ -33,7 +33,7 @@ internal static class Utils
         reader.Close();
     }
 
-    internal static IEnumerable<T> GetIterator<T>(IDataReader reader,
+    internal static IEnumerable<T> GetIterator<T>(DbDataReader reader,
         Configuration configuration) where T : new()
     {
         var fields = new string[reader.FieldCount];
@@ -63,6 +63,38 @@ internal static class Utils
         }
 
         reader.Close();
+    }
+
+    internal static async IAsyncEnumerable<T> GetIteratorAsync<T>(DbDataReader reader,
+        Configuration configuration) where T : new()
+    {
+        var fields = new string[reader.FieldCount];
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            fields[i] = reader.GetName(i);
+        }
+
+        while (await reader.ReadAsync())
+        {
+            object instance = new T();
+            foreach (var prop in typeof(T).GetProperties())
+            {
+                if (!DbNameAttribute.TryGetName(prop, out var dbFieldName))
+                {
+                    if (configuration.Inflector != null && dbFieldName != null)
+                        dbFieldName = configuration.Inflector(dbFieldName);
+                }
+
+                if (dbFieldName != null && Array.IndexOf(fields, dbFieldName) != -1)
+                {
+                    prop.SetValue(instance, reader[dbFieldName] is DBNull ? null : reader[dbFieldName]);
+                }
+            }
+
+            yield return (T)instance;
+        }
+
+        await reader.CloseAsync();
     }
 
     internal static IEnumerable<object?> GetIteratorDynamic(IDataReader reader,

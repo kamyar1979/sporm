@@ -105,7 +105,15 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
 
             var returnType = invocation.Method.ReturnType;
 
-            if (returnType != typeof(void))
+            if (returnType.IsVoid())
+            {
+                command.ExecuteNonQuery();
+            }
+            else if (returnType.IsAsyncVoid())
+            {
+                invocation.ReturnValue = command.ExecuteNonQueryAsync();
+            }
+            else
             {
                 if (!returnAsResult)
                 {
@@ -119,14 +127,22 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                     returnValue.DbType = returnType.ToClrType(configuration);
                     command.Parameters.Add(returnValue);
 
-                    command.ExecuteNonQuery();
+                    if (returnType.IsTaskResult())
+                    {
+                        async Task<object?> Func()
+                        {
+                            await command.ExecuteNonQueryAsync();
+                            return Convert.ChangeType(returnValue.Value, returnType);
+                        }
 
-                    invocation.ReturnValue = Convert.ChangeType(returnValue.Value, returnType);
+                        invocation.ReturnValue = Func();
+                    }
+                    else
+                    {
+                        command.ExecuteNonQuery();
+                        invocation.ReturnValue = Convert.ChangeType(returnValue.Value, returnType);
+                    }
                 }
-            }
-            else
-            {
-                command.ExecuteNonQuery();
             }
 
             foreach (var (item, index) in invocation.Method.GetParameters().Select((p, i) => (p, i)))
