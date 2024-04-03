@@ -16,6 +16,8 @@ internal static class Utils
     internal const string GetPropertyPrefix = "get_";
     internal const string SetPropertyPrefix = "set_";
     internal const string ValidNamePattern = @"^[^\d]\w*$";
+    internal const string AsyncMethodPostfix = "Async";
+    internal const string DeriveParameters = "DeriveParameters";
 
     internal static IEnumerable<Dictionary<string, object?>> GetIteratorDictionary(DbDataReader reader, 
         Configuration configuration)

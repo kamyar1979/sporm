@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 using System.Reflection;
 // ReSharper disable MemberCanBePrivate.Global
@@ -26,6 +27,8 @@ public static class TypeChecker
         t.IsTaskResult() && t.GetInnerType() is { } taskResultType && taskResultType.IsUntypedDictionary();
 
     public static bool IsDynamicObject(this Type t) => t == typeof(object);
+
+    public static bool IsAsyncDynamic(this Type t) => t.IsTaskResult() && t.GetInnerType().IsDynamicObject();
 }
 
 public class ResultExtractor
@@ -78,6 +81,8 @@ public class ResultExtractor
         Register(TypeChecker.IsEnumerable, InvokeInnerGeneric(nameof(ExtractEnumerable)));
         Register(TypeChecker.IsAsyncEnumerable, InvokeAsyncInnerGeneric(nameof(ExtractAsyncEnumerable)));
         Register(TypeChecker.IsDynamicObject, ExtractDynamic);
+        Register(TypeChecker.IsAsyncDynamic, ExtractDynamicAsync);
+        
     }
 
     private Dictionary<string, object?>? ExtractDictionary(DbCommand command, Type t)
@@ -94,7 +99,8 @@ public class ResultExtractor
 
     private async Task<Dictionary<string, object?>?> ExtractDictionaryAsync(DbCommand command, Type t)
     {
-        await command.Connection!.OpenAsync();
+        if(command.Connection?.State != ConnectionState.Open)
+            await command.Connection!.OpenAsync();
         _reader = await command.ExecuteReaderAsync();
         if (!await _reader.ReadAsync()) return null;
         var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
@@ -113,7 +119,8 @@ public class ResultExtractor
 
     private static async Task<T?> ExtractPrimitiveAsync<T>(DbCommand command)
     {
-        await command.Connection!.OpenAsync();
+        if(command.Connection?.State != ConnectionState.Open)
+            await command.Connection!.OpenAsync();
         var result = await command.ExecuteScalarAsync();
         return result is DBNull ? default : (T?)result;
     }
@@ -132,7 +139,8 @@ public class ResultExtractor
 
     private async Task<IAsyncEnumerable<T>?> ExtractAsyncEnumerable<T>(DbCommand command) where T: new()
     {
-        await command.Connection!.OpenAsync();
+        if(command.Connection?.State != ConnectionState.Open)
+            await command.Connection!.OpenAsync();
         _reader = await command.ExecuteReaderAsync();
         if (typeof(T).IsDynamicObject()) 
             return (IAsyncEnumerable<T>?) Utils.GetIteratorDynamicAsync(_reader, _configuration);
@@ -148,6 +156,52 @@ public class ResultExtractor
         using (_reader = command.ExecuteReader())
         {
             if (!_reader.Read()) return null;
+
+            var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
+                .ToArray();
+
+            if (t == typeof(object))
+            {
+                var builder =
+                    new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
+                foreach (var name in fields)
+                {
+                    builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
+                }
+
+                var type = builder.CreateType();
+                var instance = Activator.CreateInstance(type);
+                foreach (var name in fields)
+                {
+                    type.GetProperty(name)!.SetValue(instance,
+                        _reader[name] is DBNull ? null : _reader[name], null);
+                }
+
+                return instance;
+            }
+            else
+            {
+                var instance = Activator.CreateInstance(t);
+                foreach (var prop in t.GetProperties())
+                {
+                    if (Array.IndexOf(fields, prop.Name) != -1)
+                    {
+                        prop.SetValue(instance,
+                            _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
+                    }
+                }
+
+                return instance;
+            }
+        }
+    }
+    private async Task<object?> ExtractDynamicAsync(DbCommand command, Type t)
+    {
+        if(command.Connection?.State != ConnectionState.Open)
+            await command.Connection!.OpenAsync();
+        await using (_reader = await command.ExecuteReaderAsync())
+        {
+            if (!await _reader.ReadAsync()) return null;
 
             var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
                 .ToArray();

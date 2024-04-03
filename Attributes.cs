@@ -5,6 +5,7 @@ namespace Sporm
 	using System;
 	using System.Text.RegularExpressions;
 
+	
 	/// <summary>
 	/// says that the target stored procedure returns the result as 'Return Value' parameter.
 	/// </summary>
@@ -55,7 +56,7 @@ namespace Sporm
 				return true;
 			}
 			name = member is MethodInfo method && 
-				method.Name.EndsWith("Async")
+				method.Name.EndsWith(Utils.AsyncMethodPostfix)
 				? method.Name[..^5]
 				: member.Name;
 			return false;

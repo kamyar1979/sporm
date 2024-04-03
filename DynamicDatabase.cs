@@ -16,6 +16,7 @@ public class DynamicDatabase : DynamicObject
     private readonly DbConnection _connection = null!;
     private DbDataReader _reader = null!;
     private readonly Configuration _configuration;
+    private readonly ResultExtractor? _extractor;
 
     public DynamicDatabase(Configuration configuration)
     {
@@ -23,45 +24,19 @@ public class DynamicDatabase : DynamicObject
         _connection = connection;
         _connection.ConnectionString = configuration.ConnectionString;
         _configuration = configuration;
+        _extractor = new ResultExtractor(_configuration);
     }
     
-    /// <summary>
-    /// This is Microsoft standard way for capturing any method call in a dynamic object.
-    /// </summary>
-    /// <param name="binder"></param>
-    /// <param name="args"></param>
-    /// <param name="result"></param>
-    /// <returns></returns>
-    public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
+    private void CreateParameters(DbCommand command, CallInfo callInfo, IReadOnlyList<object?>? args)
     {
-        result = null;
-
-        _connection.Open();
-
-        var methodName = binder.Name;
-        var returnAsResult = methodName.EndsWith('_');
-        if (methodName.EndsWith('_'))
-        {
-            methodName = methodName[..^1];
-        }
-
-        if (_configuration.ProviderFactory.CreateCommand() is not { } command) return false;
-        command.Connection = _connection;
-        command.CommandType = CommandType.StoredProcedure;
-        command.CommandText = methodName;
-        if (_configuration.Inflector != null)
-            command.CommandText = _configuration.Inflector(command.CommandText);
-
-
         var i = 0;
-
-        if (binder.CallInfo.ArgumentNames.Count == 0)
+        if (callInfo.ArgumentNames.Count == 0)
         {
             var builder = _configuration.ProviderFactory.CreateCommandBuilder();
-            builder?.GetType().GetMethod("DeriveParameters")?.Invoke(null, [command]);
+            builder?.GetType().GetMethod(Utils.DeriveParameters)?.Invoke(null, [command]);
 
             var j = 0;
-            for (i = 0; i < binder.CallInfo.ArgumentCount; i++)
+            for (i = 0; i < callInfo.ArgumentCount; i++)
             {
                 while (command.Parameters[i + j].Direction != ParameterDirection.Input
                        || command.Parameters.Count == i + j) j++;
@@ -70,7 +45,7 @@ public class DynamicDatabase : DynamicObject
         }
         else
         {
-            foreach (var item in binder.CallInfo.ArgumentNames)
+            foreach (var item in callInfo.ArgumentNames)
             {
                 if (_configuration.ProviderFactory.CreateParameter() is not { } param) continue;
                 param.ParameterName = item;
@@ -83,6 +58,36 @@ public class DynamicDatabase : DynamicObject
                 i++;
             }
         }
+    }
+
+    /// <summary>
+    /// This is Microsoft standard way for capturing any method call in a dynamic object.
+    /// </summary>
+    /// <param name="binder"></param>
+    /// <param name="args"></param>
+    /// <param name="result"></param>
+    /// <returns></returns>
+    public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
+    {
+        result = null;
+
+        var methodName = binder.Name;
+        var returnAsResult = methodName.EndsWith('_');
+        if (methodName.EndsWith('_'))
+        {
+            methodName = methodName[..^1];
+        }
+
+        var isAsync = methodName.EndsWith(Utils.AsyncMethodPostfix);
+        
+
+        if (_configuration.ProviderFactory.CreateCommand() is not { } command) return false;
+        command.Connection = _connection;
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandText = isAsync ? methodName[..^5] : methodName;
+        if (_configuration.Inflector != null)
+            command.CommandText = _configuration.Inflector(command.CommandText);
+
 
         var returnType = binder.GetGenericTypeArguments()?.Count > 0
             ? binder.GetGenericTypeArguments()?[0]
@@ -92,94 +97,17 @@ public class DynamicDatabase : DynamicObject
         {
             if (!returnAsResult)
             {
-                if (returnType.IsUntypedDictionary())
+                if (isAsync)
                 {
-                    var reader = command.ExecuteReader();
-                    if (!reader.Read()) return true;
-                    var fields = new string[reader.FieldCount];
-                    for (i = 0; i < reader.FieldCount; i++)
-                    {
-                        fields[i] = reader.GetName(i);
-                    }
-
-                    if (returnType != typeof(object)) return true;
-                    var instance = fields.ToDictionary(name => name,
-                        name => reader[name] is DBNull ? null : reader[name]);
-
-                    result = instance;
+                    _connection.Open();
+                    CreateParameters(command, binder.CallInfo, args);
+                    result = _extractor?.Extract(command, typeof(Task<>).MakeGenericType(returnType));
                 }
-                else if (returnType is { IsPrimitive: true } || 
-                         Nullable.GetUnderlyingType(returnType) is {IsPrimitive: true} || 
-                         returnType == typeof(string))
+                else
                 {
-                    result = command.ExecuteScalar();
-                }
-                else if (returnType.IsEnumerable())
-                {
-                    _reader = command.ExecuteReader();
-                    if (returnType.IsGenericType && returnType.GetGenericArguments()[0] != typeof(object))
-                    {
-                        if (returnType.GetGenericArguments()[0] == typeof(Dictionary<string, object>))
-                        {
-                            result = Utils.GetIteratorDictionary(_reader, _configuration);
-                        }
-                        else
-                        {
-                            var type = returnType.GetGenericArguments()[0];
-                            result = typeof(Utils).GetMethod(nameof(Utils.GetIterator),
-                                    BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(type)
-                                .Invoke(null, [_reader, _configuration]);
-                        }
-                    }
-                    else
-                    {
-                        result = Utils.GetIteratorDynamic(_reader, _configuration);
-                    }
-                }
-                else if (returnType.IsDynamicObject())
-                {
-                    using (_reader = command.ExecuteReader())
-                    {
-                        if (!_reader.Read()) return true;
-                        var fields = new string[_reader.FieldCount];
-                        for (i = 0; i < _reader.FieldCount; i++)
-                        {
-                            fields[i] = _reader.GetName(i) is { Length: > 0 } name ? name : Utils.ReturnValue;
-                        }
-
-                        if (returnType == typeof(object))
-                        {
-                            var builder = new DynamicTypeBuilder(Utils.AnonymousTypePrefix + _reader.GetHashCode());
-                            foreach (var name in fields)
-                            {
-                                builder.AddProperty(name, _reader.GetFieldType(_reader.GetOrdinal(name)));
-                            }
-
-                            var type = builder.CreateType();
-                            var instance = Activator.CreateInstance(type);
-                            foreach (var name in fields)
-                            {
-                                type.GetProperty(name)?.SetValue(instance,
-                                    _reader[name] is DBNull ? null : _reader[name], null);
-                            }
-
-                            result = instance;
-                        }
-                        else
-                        {
-                            var instance = Activator.CreateInstance(returnType);
-                            foreach (var prop in returnType.GetProperties())
-                            {
-                                if (Array.IndexOf(fields, prop.Name) != -1)
-                                {
-                                    prop.SetValue(instance,
-                                        _reader[prop.Name] is DBNull ? null : _reader[prop.Name], null);
-                                }
-                            }
-
-                            result = instance;
-                        }
-                    }
+                    _connection.Open();
+                    CreateParameters(command, binder.CallInfo, args);
+                    result = _extractor?.Extract(command, returnType);
                 }
             }
             else
