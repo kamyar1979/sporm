@@ -92,7 +92,7 @@ public class DynamicDatabase : DynamicObject
         {
             if (!returnAsResult)
             {
-                if (returnType == typeof(Dictionary<string, object>))
+                if (returnType.IsUntypedDictionary())
                 {
                     var reader = command.ExecuteReader();
                     if (!reader.Read()) return true;
@@ -114,7 +114,7 @@ public class DynamicDatabase : DynamicObject
                 {
                     result = command.ExecuteScalar();
                 }
-                else if (returnType.GetInterface(nameof(IEnumerable<object>)) != null)
+                else if (returnType.IsEnumerable())
                 {
                     _reader = command.ExecuteReader();
                     if (returnType.IsGenericType && returnType.GetGenericArguments()[0] != typeof(object))
@@ -136,7 +136,7 @@ public class DynamicDatabase : DynamicObject
                         result = Utils.GetIteratorDynamic(_reader, _configuration);
                     }
                 }
-                else if (returnType == typeof(object))
+                else if (returnType.IsDynamicObject())
                 {
                     using (_reader = command.ExecuteReader())
                     {

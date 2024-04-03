@@ -80,12 +80,21 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                 _connection.Dispose();
                 return;
             }
+            
+            var returnType = invocation.Method.ReturnType;
+
+            if (invocation.Method.DeclaringType == typeof(IAsyncDisposable))
+            {
+                invocation.ReturnValue = _connection.DisposeAsync();
+                return;
+            }
 
             if (configuration.ProviderFactory.CreateConnection() is not { } connection) return;
             _connection = connection;
             _connection.ConnectionString = configuration.ConnectionString;
 
-            _connection.Open();
+            if(!returnType.IsTaskResult() && !returnType.IsAsyncVoid() && !returnType.IsAsyncEnumerable()) 
+                _connection.Open();
             if (configuration.ProviderFactory.CreateCommand() is not { } command) return;
 
             command.Connection = _connection;
@@ -102,8 +111,7 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                                  Attribute.IsDefined(invocation.Method, typeof(ReturnValueAsResultAttribute));
 
             command.Parameters.AddRange(CreateParameters(invocation).ToArray());
-
-            var returnType = invocation.Method.ReturnType;
+            
 
             if (returnType.IsVoid())
             {
@@ -111,7 +119,13 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
             }
             else if (returnType.IsAsyncVoid())
             {
-                invocation.ReturnValue = command.ExecuteNonQueryAsync();
+                async Task Func()
+                {
+                    await command.Connection.OpenAsync();
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                invocation.ReturnValue = Func();
             }
             else
             {
@@ -131,6 +145,7 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                     {
                         async Task<object?> Func()
                         {
+                            await command.Connection.OpenAsync();
                             await command.ExecuteNonQueryAsync();
                             return Convert.ChangeType(returnValue.Value, returnType);
                         }
@@ -155,7 +170,8 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
         }
         finally
         {
-            if (invocation.Method.DeclaringType!.GetInterface(nameof(IDisposable)) == null) _connection.Dispose();
+            if (invocation.Method.DeclaringType == typeof(IDisposable) && _connection.State == ConnectionState.Open)
+                _connection.Dispose();
         }
     }
 }

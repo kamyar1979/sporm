@@ -7,12 +7,14 @@ namespace Sporm;
 public static class TypeChecker
 {
     public static bool IsSystem(this Type t) => t.Namespace == nameof(System) && t != typeof(object);
-    public static bool IsTaskResult(this Type t) => t.GetGenericTypeDefinition() == typeof(Task<>);
+    public static bool IsTaskResult(this Type t) => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Task<>);
     public static bool IsVoid(this Type t) => t == typeof(void);
     public static bool IsAsyncVoid(this Type t) => t == typeof(Task);
     public static bool IsEnumerable(this Type t) => t.GetGenericTypeDefinition() == typeof(IEnumerable<>);
 
-    public static bool IsAsyncEnumerable(this Type t) => t.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>);
+    public static bool IsAsyncEnumerable(this Type t) => 
+        t.IsGenericType && 
+        t.IsTaskResult() && t.GetInnerType().GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>);
     public static Type GetInnerType(this Type t) => t.GetGenericArguments()[0];
 
     public static bool IsSystemTaskResult(this Type t) =>
@@ -54,6 +56,11 @@ public class ResultExtractor
         (command, t) => typeof(ResultExtractor)
             .GetMethod(name, BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic)!
             .MakeGenericMethod(t.GetInnerType()).Invoke(this, [command]);
+    
+    private Func<DbCommand, Type, object?> InvokeAsyncInnerGeneric(string name) =>
+        (command, t) => typeof(ResultExtractor)
+            .GetMethod(name, BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic)!
+            .MakeGenericMethod(t.GetInnerType().GetInnerType()).Invoke(this, [command]);
 
     public static T? ExtractTyped<T>(DbCommand command) =>
         (T?)Extractors.First(item => item.Key(typeof(T))).Value(command, typeof(T));
@@ -69,7 +76,7 @@ public class ResultExtractor
         Register(TypeChecker.IsSystem, InvokeGeneric(nameof(ExtractPrimitive)));
         Register(TypeChecker.IsSystemTaskResult, InvokeInnerGeneric(nameof(ExtractPrimitiveAsync)));
         Register(TypeChecker.IsEnumerable, InvokeInnerGeneric(nameof(ExtractEnumerable)));
-        Register(TypeChecker.IsAsyncEnumerable, InvokeInnerGeneric(nameof(ExtractAsyncEnumerable)));
+        Register(TypeChecker.IsAsyncEnumerable, InvokeAsyncInnerGeneric(nameof(ExtractAsyncEnumerable)));
         Register(TypeChecker.IsDynamicObject, ExtractDynamic);
     }
 
@@ -87,6 +94,7 @@ public class ResultExtractor
 
     private async Task<Dictionary<string, object?>?> ExtractDictionaryAsync(DbCommand command, Type t)
     {
+        await command.Connection!.OpenAsync();
         _reader = await command.ExecuteReaderAsync();
         if (!await _reader.ReadAsync()) return null;
         var fields = Enumerable.Range(0, _reader.FieldCount).Select(i => _reader.GetName(i))
@@ -105,6 +113,7 @@ public class ResultExtractor
 
     private static async Task<T?> ExtractPrimitiveAsync<T>(DbCommand command)
     {
+        await command.Connection!.OpenAsync();
         var result = await command.ExecuteScalarAsync();
         return result is DBNull ? default : (T?)result;
     }
@@ -121,9 +130,10 @@ public class ResultExtractor
             .Invoke(null, [_reader, _configuration]);
     }
 
-    private IAsyncEnumerable<T>? ExtractAsyncEnumerable<T>(DbCommand command) where T: new()
+    private async Task<IAsyncEnumerable<T>?> ExtractAsyncEnumerable<T>(DbCommand command) where T: new()
     {
-        _reader = command.ExecuteReader();
+        await command.Connection!.OpenAsync();
+        _reader = await command.ExecuteReaderAsync();
         if (typeof(T).IsDynamicObject()) 
             return (IAsyncEnumerable<T>?) Utils.GetIteratorDynamicAsync(_reader, _configuration);
         if (typeof(T).IsUntypedDictionary()) 
