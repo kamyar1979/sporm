@@ -54,8 +54,11 @@ namespace Sporm
 				name = dbName;
 				return true;
 			}
-
-			name = member.Name;
+			name = member is MethodInfo method && 
+				(method.ReturnType == typeof(Task) || method.ReturnType.BaseType == typeof(Task)) &&
+				method.Name.EndsWith("Async")
+				? method.Name[..^5]
+				: member.Name;
 			return false;
 		}
 
