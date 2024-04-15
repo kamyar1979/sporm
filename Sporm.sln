@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sporm", "Sporm\Sporm.csproj", "{F9D1F3A3-DBAC-4D71-B022-431780ACEE0D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sporm.Test", "Sporm.Test\Sporm.Test.csproj", "{9B111594-3F0A-4A33-B8A1-64236582F1F0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F9D1F3A3-DBAC-4D71-B022-431780ACEE0D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F9D1F3A3-DBAC-4D71-B022-431780ACEE0D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F9D1F3A3-DBAC-4D71-B022-431780ACEE0D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F9D1F3A3-DBAC-4D71-B022-431780ACEE0D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B111594-3F0A-4A33-B8A1-64236582F1F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B111594-3F0A-4A33-B8A1-64236582F1F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B111594-3F0A-4A33-B8A1-64236582F1F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B111594-3F0A-4A33-B8A1-64236582F1F0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
