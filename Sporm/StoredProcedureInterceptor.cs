@@ -138,24 +138,22 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
                     if (configuration.ProviderFactory.CreateParameter() is not { } returnValue) return;
                     returnValue.Direction = ParameterDirection.ReturnValue;
                     returnValue.ParameterName = Utils.ReturnValue;
-                    returnValue.DbType = returnType.ToClrType(configuration);
+                    var returnValueType = returnType.IsTaskResult() ? returnType.GetInnerType() : returnType;
+                    returnValue.DbType = returnValueType.ToClrType(configuration);
                     command.Parameters.Add(returnValue);
 
                     if (returnType.IsTaskResult())
                     {
-                        async Task<object?> Func()
-                        {
-                            await command.Connection.OpenAsync();
-                            await command.ExecuteNonQueryAsync();
-                            return Convert.ChangeType(returnValue.Value, returnType);
-                        }
-
-                        invocation.ReturnValue = Func();
+                        invocation.ReturnValue = typeof(StoredProcedureInterceptor)
+                            .GetMethod(nameof(ExecuteReturnValueAsync),
+                                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+                            .MakeGenericMethod(returnValueType)
+                            .Invoke(null, [command, returnValue]);
                     }
                     else
                     {
                         command.ExecuteNonQuery();
-                        invocation.ReturnValue = Convert.ChangeType(returnValue.Value, returnType);
+                        invocation.ReturnValue = ConvertReturnValue(returnValue.Value, returnValueType);
                     }
                 }
             }
@@ -173,5 +171,22 @@ public class StoredProcedureInterceptor(Configuration configuration) : IIntercep
             if (invocation.Method.DeclaringType == typeof(IDisposable) && _connection.State == ConnectionState.Open)
                 _connection.Dispose();
         }
+    }
+
+    private static async Task<T?> ExecuteReturnValueAsync<T>(DbCommand command, DbParameter returnValue)
+    {
+        if (command.Connection?.State != ConnectionState.Open)
+            await command.Connection!.OpenAsync();
+
+        await command.ExecuteNonQueryAsync();
+        return (T?)ConvertReturnValue(returnValue.Value, typeof(T));
+    }
+
+    private static object? ConvertReturnValue(object? value, Type returnType)
+    {
+        if (value is null or DBNull)
+            return returnType.IsValueType ? Activator.CreateInstance(returnType) : null;
+
+        return Convert.ChangeType(value, returnType);
     }
 }

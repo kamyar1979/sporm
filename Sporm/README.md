@@ -1,24 +1,56 @@
-# Stored Procedure ORM!
+# Sporm
 
-I know Stored Procedures and Database Functions, in most cases are not good practice, except for Data Driven projects. 
-But this project has started years ago for communication with an old MS-SQL Server database and that is why I have used
-the name 'Stored Procedure' instead of Database Function. But current version supports any database which has 
-.NET driver.
+Sporm is a small stored procedure ORM for .NET: a spellbook for calling database
+procedures and functions as ordinary C# methods.
 
-## The problem
-Many times, you want to call database functions/procedures from within an OOP project, and you have to write too much 
-boiler plate code: You have to wrote code for adding parameters and values. If the functions returns a table structure, 
-the ORM can not help you for impedance mismatch here! You have to manually convert between database result and your 
-model objects. This library does the trick for you and tries to do all the things ORM does. You can call database 
-functions as normal class methods and expect the result converted to .NET types, including your class types.
+Describe the shape of your database ritual in an interface, or summon it through
+`dynamic`, and Sporm prepares the command, binds parameters, executes it, and
+maps the result back into .NET values, objects, dictionaries, or streams.
 
-## Getting started
+It began as a charm for an older SQL Server database, but today it works with
+any database provider that exposes a standard `DbProviderFactory`.
 
-You can use this library in two ways: 
+## What The Spell Does
 
-### 1. Static Typing
+Calling stored procedures by hand usually means repeating the same ADO.NET
+ceremony:
 
-For static typing, you must create an interface which includes your database functions signature.
+- create the connection and command
+- set `CommandType.StoredProcedure`
+- bind input, output, and return-value parameters
+- execute the command
+- read scalars or rows
+- map fields into models
+- close the reader and connection
+
+Sporm keeps the database boundary explicit, but removes most of the boilerplate.
+Your C# method name becomes the procedure name. Your method parameters become
+database parameters. Your return type tells Sporm how to read the result.
+
+## Install The Grimoire
+
+Install Sporm and the provider for your database:
+
+```bash
+dotnet add package Sporm
+dotnet add package Npgsql
+```
+
+Sporm targets `.NET 8`.
+
+Sporm does not choose your database driver for you. Use any provider that exposes
+a `DbProviderFactory`, such as `NpgsqlFactory` for PostgreSQL.
+
+## First Invocation: PostgreSQL
+
+For PostgreSQL functions, enable Npgsql's stored procedure compatibility mode
+before creating the Sporm configuration:
+
+```csharp
+AppContext.SetSwitch("Npgsql.EnableStoredProcedureCompatMode", true);
+```
+
+Create a database function:
 
 ```sql
 CREATE FUNCTION add(a integer, b integer) RETURNS integer
@@ -28,153 +60,283 @@ RETURNS NULL ON NULL INPUT
 RETURN a + b;
 ```
 
+Declare the matching C# interface:
+
 ```csharp
 public interface IMyDb : IDisposable
 {
-    public int Add(int a, int b);
+    int Add(int a, int b);
 }
 ```
 
-#### Note that IDisposable is _required_ to make the library close connection after reading data.
-
-For PostgreSQL, we need to add the following line to force NpgSQL to behave functions as like stored procedures
+Bind the interface to the database and call the function:
 
 ```csharp
-AppContext.SetSwitch("Npgsql.EnableStoredProcedureCompatMode", true);
-```
-
-Now, create configuration for your desired database, which includes functions:
-
-```csharp
-
-using Sporm;
 using Inflector;
+using Npgsql;
+using Sporm;
 
-var conf = ConfigurationBuilder.ForDatabase("server=127.0.0.1;user id=kamyar;password=MySecretPassword;database=example",
-    Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore());
+AppContext.SetSwitch("Npgsql.EnableStoredProcedureCompatMode", true);
+
+var dbConfig = ConfigurationBuilder
+    .ForDatabase(
+        "Host=localhost;Username=postgres;Password=secret;Database=example",
+        NpgsqlFactory.Instance)
+    .Inflector(name => name.Underscore());
+
+using var db = dbConfig.CreateInstance<IMyDb>();
+
+var result = db.Add(6, 7);
+Console.WriteLine(result); // 13
 ```
-(We are using Inflector library https://www.nuget.org/packages/Inflector.NetCore)
 
-You can use any database factory you want instead of NpgsqlFactory! We are using PostGreSQL here. Then setup
-your database! And you can now use Sprom!
+`IDisposable` matters for static interfaces. Use `using` so Sporm can dispose the
+underlying connection when the invocation is complete.
 
-```csharp
+## Reading Tables From The Cauldron
 
-using var db = conf.CreateInstance<IMyDb>();
-
-int result = db.Add(6, 7);
-
-// Result would be 13!
-```
-Note the _using_ statement which makes the database connection close after reading data. You must use it to avoid connection
-leaks in your project. You may note that we are using inflector, which means the naming convention of the database 
-differs from code naming conventions. That is, if we used 'Add' in the function definition within the database, 
-we would omit inflector part of the configuration.
-
-Lets try a more complex example: The function returns a table.
+Sporm can map result sets into `IEnumerable<T>`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS public.users
+CREATE TABLE IF NOT EXISTS users
 (
-    id bigint NOT NULL,
-    username character varying(60) NOT NULL,
-    password character varying(128),
-    name character varying(256),
-    email character varying(256),
-    last_login timestamp with time zone,
-    CONSTRAINT users_pk PRIMARY KEY (id),
-    CONSTRAINT users_ak UNIQUE (username)
+    id bigint NOT NULL PRIMARY KEY,
+    username varchar(60) NOT NULL UNIQUE,
+    name varchar(256),
+    email varchar(256),
+    last_login timestamp with time zone
 );
 
-INSERT INTO users VALUES(1, 'kamyar1979', '<some hash>', 'Kamyar Inanloo', 'kamyar1979@gmail.com', CURRENT_DATE);
-INSERT INTO users VALUES(2, 'otheruser', '<some hash>', 'Other User', 'someone@example.com', CURRENT_DATE);
-
 CREATE OR REPLACE FUNCTION get_users() RETURNS TABLE (
-	id bigint,
-    username character varying(60),
-    name character varying(256),
-    email character varying(256),
+    id bigint,
+    username varchar(60),
+    name varchar(256),
+    email varchar(256),
     last_login timestamp with time zone)
-	LANGUAGE PLPGSQL AS
-	$$
+LANGUAGE PLPGSQL AS
+$$
 BEGIN
-RETURN QUERY SELECT users.id,users.username,users.name,users.email,users.last_login FROM users;
+    RETURN QUERY
+    SELECT users.id, users.username, users.name, users.email, users.last_login
+    FROM users;
 END
-	$$
+$$;
 ```
 
+Define a model and a method:
+
 ```csharp
+using Sporm;
+
 public record struct User(
     long Id,
     [property: DbName("username")] string Username,
     string Name,
     string Email,
     DateTime LastLogin);
-```
 
-```csharp 
 public interface IMyDb : IDisposable
 {
-    public int Add(int a, int b);
-    public IEnumerable<User> GetUsers();
+    IEnumerable<User> GetUsers();
 }
-
 ```
+
+Then read rows like a normal method call:
 
 ```csharp
+using var db = dbConfig.CreateInstance<IMyDb>();
 
-var result = db.GetUsers().ToArray();
-
-Console.WriteLine(result[0].Name);
-
-// Kamyar Inanloo
-
+var users = db.GetUsers().ToArray();
+Console.WriteLine(users[0].Name);
 ```
 
-The result is an array of User object containing the result set. The shining part of this code is DbName attribute: The
-inflector tries to find user_name in the result fields, but the name is username, so we explicitly inform the library to
-use the mentioned name for the result. This attribute is available also for input parameters and class/struct names.
+`DbName` overrides the database name for a method, parameter, or property. In
+the example above, it maps `Username` to the database column `username`.
 
-### 2. Dynamic Typing
+## Async Incantations
 
-What if we do not have time for creating database interface? No Problem! you just loose IDE 
-auto-completion and some running speed (Due to DLR). In the following code we have not declared IMyDb interface,
-instead we use dynamic keyword for database object;
+Static interfaces can expose task-based methods:
 
 ```csharp
-dynamic db = conf.CreateInstance();
-
-IEnumerable<User> result = db.GetUsers<IEnumerable<User>>();
-
-var array = result.ToArray(); 
-
-Console.WriteLine(array[0].Name);
+public interface IMyDb : IDisposable, IAsyncDisposable
+{
+    Task<int> AddAsync(int a, int b);
+    Task SaveUserAsync(string username);
+    Task<IAsyncEnumerable<User>> GetUsersAsync();
+}
 ```
 
-What if we do not want to declare User class? It is possible too!
+Use `await using` when your interface supports `IAsyncDisposable`:
 
 ```csharp
-dynamic db = conf.CreateInstance();
+await using var db = dbConfig.CreateInstance<IMyDb>();
 
-IEnumerable<dynamic> result = db.GetUsers<IEnumerable<dynamic>>();
+var result = await db.AddAsync(6, 7);
+var users = await db.GetUsersAsync();
 
-var array = result.ToArray(); 
-
-Console.WriteLine(array[0].name);
+await foreach (var user in users)
+{
+    Console.WriteLine(user.Name);
+}
 ```
 
-Note: If you want to use C# naming conventions and property names get pascal case, you must add _Deflector_:
+Async method names automatically map without the `Async` suffix. With the
+underscore inflector configured, `GetUsersAsync` calls `get_users`.
+
+## Dynamic Summoning
+
+If you do not want to write an interface, create a dynamic database object:
 
 ```csharp
-var conf = ConfigurationBuilder.ForDatabase("server=127.0.0.1;user id=kamyar;password=MySecretPassword;database=example",
-    Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore()).Deflector(s => s.Pascalize()).Build();
+dynamic db = dbConfig.CreateInstance();
 
+IEnumerable<User> users = db.GetUsers<IEnumerable<User>>();
+Console.WriteLine(users.First().Name);
 ```
 
-Then you can use 'Name' instead of 'name' for property:
+Dynamic rows work too:
 
 ```csharp
-Console.WriteLine(array[0].Name);
+dynamic db = dbConfig.CreateInstance();
+
+IEnumerable<dynamic> users = db.GetUsers<IEnumerable<dynamic>>();
+Console.WriteLine(users.First().name);
 ```
 
+Dynamic async calls use the `Async` suffix and return awaitable tasks:
 
+```csharp
+dynamic db = dbConfig.CreateInstance();
+
+int result = await db.AddAsync<int>(a: 6, b: 7);
+await db.SaveUserAsync(username: "kamyar1979");
+```
+
+For dynamic stored procedure return values, add a trailing underscore before the
+generic result type:
+
+```csharp
+int newId = await db.CreateUserAsync_<int>(username: "kamyar1979");
+```
+
+## Naming Runes
+
+By default, Sporm uses your C# method, parameter, and property names. You can
+shape those names before they cross the database gate:
+
+```csharp
+var dbConfig = ConfigurationBuilder
+    .ForDatabase(connectionString, providerFactory)
+    .Inflector(name => name.Underscore())
+    .Deflector(name => name.Pascalize());
+```
+
+- `Inflector` converts C# names to database names, such as `GetUsers` to
+  `get_users`.
+- `Deflector` converts database result names to C# names for dynamic and
+  dictionary results.
+- `[DbName("database_name")]` overrides the name for one method, parameter, or
+  property.
+
+To make dynamic result properties use C#-style names, add a deflector:
+
+```csharp
+var dbConfig = ConfigurationBuilder
+    .ForDatabase(connectionString, NpgsqlFactory.Instance)
+    .Inflector(name => name.Underscore())
+    .Deflector(name => name.Pascalize());
+```
+
+Then dynamic results can use `Name` instead of `name`.
+
+## Parameters And Return Values
+
+Sporm supports input parameters, output parameters, and stored procedure return
+values.
+
+```csharp
+public interface IMyDb : IDisposable
+{
+    void UpdateName(long id, string name);
+
+    void TryGetName(long id, [Size(256)] out string name);
+
+    [ReturnValueAsResult]
+    int CreateUser(string username, string email);
+
+    [ReturnValueAsResult]
+    Task<int> CreateUserAsync(string username, string email);
+}
+```
+
+Useful attributes:
+
+- `[DbName("...")]` sets the database name explicitly.
+- `[Size(...)]` sets the size for an output parameter.
+- `[ReturnValue]` marks a parameter as the stored procedure return-value
+  parameter.
+- `[ReturnValueAsResult]` maps the stored procedure return value to the method
+  result.
+
+If your provider or database needs custom CLR-to-`DbType` mapping, configure a
+type resolver:
+
+```csharp
+var dbConfig = ConfigurationBuilder
+    .ForDatabase(connectionString, providerFactory)
+    .TypeResolver(member => DbType.String);
+```
+
+## Result Shapes
+
+Sporm can extract:
+
+- primitive values, such as `int`, `string`, and `DateTime`
+- `Task<T>` primitive results
+- `IEnumerable<T>` result sets
+- `Task<IAsyncEnumerable<T>>` async result sets
+- `Dictionary<string, object?>`
+- dynamic row objects
+
+## When To Use This Magic
+
+Sporm is best when your database boundary is already built around stored
+procedures or database functions and you want C# calls to stay small and
+readable.
+
+Good fits:
+
+- legacy databases with important stored procedures
+- data-driven projects where database functions are part of the design
+- small data-access layers that should avoid repetitive ADO.NET plumbing
+- services that want explicit database contracts without a full entity ORM
+
+Reach for handwritten ADO.NET or a conventional ORM when:
+
+- queries are complex and easier to review as SQL
+- you need rich change tracking
+- you need provider-specific features outside the stored-procedure model
+
+## Development
+
+Build the solution:
+
+```bash
+dotnet build
+```
+
+Run the test suite:
+
+```bash
+dotnet test
+```
+
+The PostgreSQL integration test is optional. To run it, provide a connection
+string through `SPORM_POSTGRES_CONNECTION`:
+
+```bash
+SPORM_POSTGRES_CONNECTION="Host=localhost;Username=postgres;Password=secret;Database=example" dotnet test
+```
+
+The async behavior is covered by provider-level unit tests that do not require a
+real database server.

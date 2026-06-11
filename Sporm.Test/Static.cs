@@ -10,13 +10,19 @@ namespace Sporm.Test;
 public class Static
 {
     [Fact]
-    public async void SimpleTypes()
+    public async Task SimpleTypes()
     {
+        var connectionString = Environment.GetEnvironmentVariable("SPORM_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
         Inflector.Inflector.SetDefaultCultureFunc = () => CultureInfo.CurrentUICulture;
 
         AppContext.SetSwitch("Npgsql.EnableStoredProcedureCompatMode", true);
 
-        var conf = ConfigurationBuilder.ForDatabase("server=localhost;user id=kamyar;password=Nautilus;database=zeero",
+        var conf = ConfigurationBuilder.ForDatabase(connectionString,
             Npgsql.NpgsqlFactory.Instance).Inflector(s => s.Underscore()).Deflector(s => s.Pascalize());
 
         await using var db = conf.CreateInstance<IMyDb>();
@@ -26,7 +32,7 @@ public class Static
         
         await foreach (var item in result)
         {
-            Assert.Equal(item.Name, "Kamyar Inanloo");
+            Assert.Equal("Kamyar Inanloo", item.Name);
         }
     }
 }

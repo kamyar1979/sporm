@@ -43,11 +43,11 @@ public class ResultExtractor
 
     private DbDataReader _reader = null!;
 
-    private static readonly Dictionary<Predicate<Type>, Func<DbCommand, Type, object?>> Extractors = new();
+    private readonly Dictionary<Predicate<Type>, Func<DbCommand, Type, object?>> _extractors = new();
 
-    public static void Register(Predicate<Type> predicate, Func<DbCommand, Type, object?> func)
+    public void Register(Predicate<Type> predicate, Func<DbCommand, Type, object?> func)
     {
-        Extractors[predicate] = func;
+        _extractors[predicate] = func;
     }
 
     private Func<DbCommand, Type, object?> InvokeGeneric(string name) =>
@@ -65,11 +65,14 @@ public class ResultExtractor
             .GetMethod(name, BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic)!
             .MakeGenericMethod(t.GetInnerType().GetInnerType()).Invoke(this, [command]);
 
-    public static T? ExtractTyped<T>(DbCommand command) =>
-        (T?)Extractors.First(item => item.Key(typeof(T))).Value(command, typeof(T));
+    private T? ExtractTyped<T>(DbCommand command) =>
+        (T?)_extractors.First(item => item.Key(typeof(T))).Value(command, typeof(T));
 
     public object? Extract(DbCommand command, Type t) =>
-        typeof(ResultExtractor).GetMethod(nameof(ExtractTyped))!.MakeGenericMethod(t).Invoke(null, [command]);
+        typeof(ResultExtractor)
+            .GetMethod(nameof(ExtractTyped), BindingFlags.Instance | BindingFlags.NonPublic)!
+            .MakeGenericMethod(t)
+            .Invoke(this, [command]);
 
 
     public void RegisterExtractors()
