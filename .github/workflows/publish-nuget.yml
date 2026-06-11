@@ -1,0 +1,64 @@
+name: Publish NuGet Package
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build, test, pack, and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore Sporm.sln
+
+      - name: Build
+        run: dotnet build Sporm.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Sporm.sln --configuration Release --no-build --verbosity normal
+
+      - name: Pack
+        run: >
+          dotnet pack Sporm/Sporm.csproj
+          --configuration Release
+          --no-build
+          --output ./artifacts
+          /p:PackageVersion=${{ steps.version.outputs.version }}
+          /p:Version=${{ steps.version.outputs.version }}
+
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish to NuGet
+        run: >
+          dotnet nuget push "./artifacts/*.nupkg"
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
+          --source "https://api.nuget.org/v3/index.json"
+          --skip-duplicate
